@@ -1,0 +1,39 @@
+import client from "./client";
+
+export type ProxyHost = {
+  id: number;
+  name: string;
+  serverName: string;
+  upstreamUrl: string;
+  certificateCertPath: string;
+  certificateKeyPath: string;
+  enabled: boolean;
+  description: string;
+  lastApplyStatus: string;
+  lastApplyError: string;
+  lastAppliedAt?: string;
+};
+
+export type ProxyPayload = Omit<
+  ProxyHost,
+  "id" | "lastApplyStatus" | "lastApplyError" | "lastAppliedAt"
+>;
+
+export async function fetchProxyHosts() {
+  const response = await client.get("/proxy");
+  return response.data as { items: ProxyHost[] };
+}
+
+export async function createProxyHost(payload: ProxyPayload) {
+  const response = await client.post("/proxy", payload);
+  return response.data as ProxyHost;
+}
+
+export async function updateProxyHost(id: number, payload: ProxyPayload) {
+  const response = await client.put(`/proxy/${id}`, payload);
+  return response.data as ProxyHost;
+}
+
+export async function deleteProxyHost(id: number) {
+  await client.delete(`/proxy/${id}`);
+}
