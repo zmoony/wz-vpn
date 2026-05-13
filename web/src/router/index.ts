@@ -2,8 +2,10 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import AppLayout from "../layouts/AppLayout.vue";
 import { useAuthStore } from "../stores/auth";
+import CertsView from "../views/CertsView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DDNSView from "../views/DDNSView.vue";
+import FirewallView from "../views/FirewallView.vue";
 import LoginView from "../views/LoginView.vue";
 import ProxyView from "../views/ProxyView.vue";
 import WireGuardView from "../views/WireGuardView.vue";
@@ -22,8 +24,8 @@ const router = createRouter({
         { path: "wireguard", name: "wireguard", component: WireGuardView },
         { path: "proxy", name: "proxy", component: ProxyView },
         { path: "ddns", name: "ddns", component: DDNSView },
-        { path: "certs", name: "certs", component: StubModuleView, props: { module: "证书管理" } },
-        { path: "firewall", name: "firewall", component: StubModuleView, props: { module: "防火墙" } },
+        { path: "certs", name: "certs", component: CertsView },
+        { path: "firewall", name: "firewall", component: FirewallView },
         { path: "settings", name: "settings", component: StubModuleView, props: { module: "系统设置" } },
       ],
     },

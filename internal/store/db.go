@@ -89,6 +89,39 @@ func migrate(db *sql.DB) error {
 			updated_at datetime not null,
 			unique(domain, subdomain)
 		);`,
+		`create table if not exists cert_configs (
+			id integer primary key autoincrement,
+			root_domain text not null unique,
+			provider text not null,
+			access_key_id text not null,
+			access_key_secret_encrypted text not null,
+			install_dir text not null,
+			enabled_auto_renew integer not null default 1,
+			fullchain_path text not null default '',
+			private_key_path text not null default '',
+			last_issue_status text not null default '',
+			last_issue_error text not null default '',
+			last_issued_at datetime,
+			created_at datetime not null,
+			updated_at datetime not null
+		);`,
+		`create table if not exists firewall_rules (
+			id integer primary key autoincrement,
+			name text not null,
+			kind text not null,
+			template_key text not null default '',
+			protocol text not null default '',
+			port integer not null default 0,
+			port_range_start integer not null default 0,
+			port_range_end integer not null default 0,
+			source_cidr text not null default '',
+			action text not null default 'accept',
+			enabled integer not null default 1,
+			priority integer not null default 1,
+			description text not null default '',
+			created_at datetime not null,
+			updated_at datetime not null
+		);`,
 	}
 
 	for _, statement := range statements {

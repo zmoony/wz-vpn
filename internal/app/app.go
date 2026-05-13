@@ -13,8 +13,10 @@ import (
 	"github.com/zmoony/pi-gateway/internal/api"
 	"github.com/zmoony/pi-gateway/internal/config"
 	"github.com/zmoony/pi-gateway/internal/platform"
+	"github.com/zmoony/pi-gateway/internal/platform/acme"
 	"github.com/zmoony/pi-gateway/internal/platform/ddnsgo"
 	"github.com/zmoony/pi-gateway/internal/platform/nginx"
+	"github.com/zmoony/pi-gateway/internal/platform/nftables"
 	"github.com/zmoony/pi-gateway/internal/platform/systemstats"
 	"github.com/zmoony/pi-gateway/internal/platform/wireguard"
 	"github.com/zmoony/pi-gateway/internal/service"
@@ -44,6 +46,8 @@ func New() (*Application, error) {
 	peerStore := store.SQLiteWireGuardPeerStore{DB: db}
 	proxyStore := store.SQLiteProxyHostStore{DB: db}
 	ddnsStore := store.SQLiteDDNSConfigStore{DB: db}
+	certStore := store.SQLiteCertificateConfigStore{DB: db}
+	firewallStore := store.SQLiteFirewallRuleStore{DB: db}
 
 	authService := service.AuthService{
 		Users:          userStore,
@@ -69,6 +73,17 @@ func New() (*Application, error) {
 		ReloadCommand: cfg.DDNSGoReloadCmd,
 		Runner:        commandRunner,
 	}
+	acmeManager := acme.SystemManager{
+		Runner:     commandRunner,
+		ACMEShPath: cfg.ACMEShPath,
+		ReloadCmd:  cfg.NginxReloadCmd,
+	}
+	nftManager := nftables.SystemManager{
+		Runner:     commandRunner,
+		RulesPath:  cfg.NftablesRulesPath,
+		StatePath:  cfg.FirewallStatePath,
+		BackupsDir: cfg.FirewallBackupsDir,
+	}
 
 	systemService := service.SystemStatsService{
 		Collector: systemstats.StaticCollector{},
@@ -93,6 +108,19 @@ func New() (*Application, error) {
 		Configs: ddnsStore,
 		Manager: ddnsManager,
 	}
+	certService := service.CertificateService{
+		Configs:            certStore,
+		Manager:            acmeManager,
+		DefaultInstallRoot: cfg.CertsInstallRoot,
+	}
+	firewallService := &service.FirewallService{
+		Rules:      firewallStore,
+		Manager:    nftManager,
+		PendingTTL: time.Duration(cfg.FirewallPendingSeconds) * time.Second,
+	}
+	if err := firewallService.ResumePending(context.Background()); err != nil {
+		return nil, fmt.Errorf("resume firewall pending state: %w", err)
+	}
 
 	engine := api.NewRouter(api.Dependencies{
 		Config:         cfg,
@@ -101,6 +129,8 @@ func New() (*Application, error) {
 		WGService:      wgService,
 		ProxyService:   proxyService,
 		DDNSService:    ddnsService,
+		CertService:    certService,
+		FirewallService: firewallService,
 	})
 
 	server := &http.Server{

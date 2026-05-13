@@ -25,6 +25,13 @@ type Config struct {
 	DDNSGoConfigPath  string
 	DDNSGoStatusPath  string
 	DDNSGoReloadCmd   string
+	ACMEShPath        string
+	CertsInstallRoot  string
+	NginxReloadCmd    string
+	NftablesRulesPath string
+	FirewallStatePath string
+	FirewallBackupsDir string
+	FirewallPendingSeconds int
 }
 
 func Load() Config {
@@ -50,6 +57,13 @@ func Load() Config {
 		DDNSGoConfigPath:  getenv("PI_GATEWAY_DDNSGO_CONFIG_PATH", dataDir+"/ddns-go/config.json"),
 		DDNSGoStatusPath:  getenv("PI_GATEWAY_DDNSGO_STATUS_PATH", dataDir+"/ddns-go/status.json"),
 		DDNSGoReloadCmd:   getenv("PI_GATEWAY_DDNSGO_RELOAD_COMMAND", ""),
+		ACMEShPath:        getenv("PI_GATEWAY_ACME_SH_PATH", "~/.acme.sh/acme.sh"),
+		CertsInstallRoot:  getenv("PI_GATEWAY_CERTS_INSTALL_ROOT", dataDir+"/certs"),
+		NginxReloadCmd:    getenv("PI_GATEWAY_NGINX_RELOAD_COMMAND", "nginx -s reload"),
+		NftablesRulesPath: getenv("PI_GATEWAY_NFTABLES_RULES_PATH", dataDir+"/nftables/pi-gateway.nft"),
+		FirewallStatePath: getenv("PI_GATEWAY_FIREWALL_STATE_PATH", dataDir+"/nftables/pending-apply.json"),
+		FirewallBackupsDir: getenv("PI_GATEWAY_FIREWALL_BACKUPS_DIR", dataDir+"/nftables/backups"),
+		FirewallPendingSeconds: getenvInt("PI_GATEWAY_FIREWALL_PENDING_SECONDS", 30),
 	}
 }
 

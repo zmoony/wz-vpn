@@ -18,6 +18,8 @@ type Dependencies struct {
 	WGService     service.WireGuardService
 	ProxyService  service.ProxyService
 	DDNSService   service.DDNSService
+	CertService   service.CertificateService
+	FirewallService *service.FirewallService
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -35,6 +37,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	wgHandler := WireGuardHandler{Service: deps.WGService}
 	proxyHandler := ProxyHandler{Service: deps.ProxyService}
 	ddnsHandler := DDNSHandler{Service: deps.DDNSService}
+	certHandler := CertificateHandler{Service: deps.CertService}
+	firewallHandler := FirewallHandler{Service: deps.FirewallService}
 	moduleHandler := ModuleStubHandler{}
 
 	apiGroup := engine.Group("/api")
@@ -64,8 +68,18 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			protected.POST("/ddns", ddnsHandler.Create)
 			protected.PUT("/ddns/:id", ddnsHandler.Update)
 			protected.POST("/ddns/sync", ddnsHandler.Sync)
-			protected.GET("/certs", moduleHandler.List("certs"))
-			protected.GET("/firewall/rules", moduleHandler.List("firewall"))
+			protected.GET("/certs", certHandler.List)
+			protected.POST("/certs", certHandler.Create)
+			protected.PUT("/certs/:id", certHandler.Update)
+			protected.POST("/certs/:id/renew", certHandler.Renew)
+			protected.GET("/firewall/rules", firewallHandler.List)
+			protected.POST("/firewall/rules", firewallHandler.Create)
+			protected.PUT("/firewall/rules/:id", firewallHandler.Update)
+			protected.DELETE("/firewall/rules/:id", firewallHandler.Delete)
+			protected.POST("/firewall/preview", firewallHandler.Preview)
+			protected.POST("/firewall/apply", firewallHandler.Apply)
+			protected.POST("/firewall/confirm", firewallHandler.Confirm)
+			protected.GET("/firewall/pending", firewallHandler.Pending)
 			protected.GET("/settings", moduleHandler.List("settings"))
 		}
 	}
