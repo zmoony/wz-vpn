@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi-Gateway Control Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pi-gateway
+EnvironmentFile=/opt/pi-gateway/etc/pi-gateway.env
+ExecStart=/opt/pi-gateway/bin/pi-gateway
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

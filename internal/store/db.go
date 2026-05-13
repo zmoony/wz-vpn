@@ -122,6 +122,19 @@ func migrate(db *sql.DB) error {
 			created_at datetime not null,
 			updated_at datetime not null
 		);`,
+		`create table if not exists firewall_forward_rules (
+			id integer primary key autoincrement,
+			name text not null,
+			source_cidr text not null,
+			destination_cidr text not null,
+			protocol text not null default 'any',
+			destination_port integer not null default 0,
+			enabled integer not null default 1,
+			priority integer not null default 1,
+			description text not null default '',
+			created_at datetime not null,
+			updated_at datetime not null
+		);`,
 	}
 
 	for _, statement := range statements {

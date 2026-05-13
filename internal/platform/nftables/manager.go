@@ -15,7 +15,7 @@ import (
 )
 
 type Manager interface {
-	RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string
+	RenderRules(rules []domain.FirewallRule, forwardRules []domain.FirewallForwardRule, forward domain.FirewallForwardConfig) string
 	Apply(ctx context.Context, candidate string, rollbackText string, ttl time.Duration) (*domain.FirewallPendingState, error)
 	Confirm(ctx context.Context) error
 	Rollback(ctx context.Context) error
@@ -29,7 +29,7 @@ type SystemManager struct {
 	BackupsDir    string
 }
 
-func (m SystemManager) RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string {
+func (m SystemManager) RenderRules(rules []domain.FirewallRule, forwardRules []domain.FirewallForwardRule, forward domain.FirewallForwardConfig) string {
 	lines := []string{
 		"table inet pi_gateway {",
 		"    chain input {",
@@ -57,7 +57,15 @@ func (m SystemManager) RenderRules(rules []domain.FirewallRule, forward domain.F
 		"        policy drop;",
 		"        ct state established,related accept",
 	)
-	if forward.Enabled && strings.TrimSpace(forward.WGInterface) != "" && strings.TrimSpace(forward.LanCIDR) != "" {
+	for _, rule := range forwardRules {
+		if !rule.Enabled {
+			continue
+		}
+		if rendered := renderForwardRule(rule); rendered != "" {
+			lines = append(lines, "        "+rendered)
+		}
+	}
+	if len(forwardRules) == 0 && forward.Enabled && strings.TrimSpace(forward.WGInterface) != "" && strings.TrimSpace(forward.LanCIDR) != "" {
 		if strings.Contains(forward.LanCIDR, ":") {
 			lines = append(lines, fmt.Sprintf("        iifname \"%s\" ip6 daddr %s accept", forward.WGInterface, forward.LanCIDR))
 		} else {
@@ -247,6 +255,37 @@ func renderRule(rule domain.FirewallRule) string {
 		return ""
 	}
 
+	parts = append(parts, "accept")
+	return strings.Join(parts, " ")
+}
+
+func renderForwardRule(rule domain.FirewallForwardRule) string {
+	parts := make([]string, 0, 5)
+	if source := strings.TrimSpace(rule.SourceCIDR); source != "" {
+		if strings.Contains(source, ":") {
+			parts = append(parts, "ip6 saddr "+source)
+		} else {
+			parts = append(parts, "ip saddr "+source)
+		}
+	}
+	if destination := strings.TrimSpace(rule.DestinationCIDR); destination != "" {
+		if strings.Contains(destination, ":") {
+			parts = append(parts, "ip6 daddr "+destination)
+		} else {
+			parts = append(parts, "ip daddr "+destination)
+		}
+	}
+	protocol := strings.ToLower(strings.TrimSpace(rule.Protocol))
+	switch protocol {
+	case "", "any":
+	case "tcp", "udp":
+		parts = append(parts, protocol)
+		if rule.DestinationPort > 0 {
+			parts = append(parts, fmt.Sprintf("dport %d", rule.DestinationPort))
+		}
+	default:
+		return ""
+	}
 	parts = append(parts, "accept")
 	return strings.Join(parts, " ")
 }

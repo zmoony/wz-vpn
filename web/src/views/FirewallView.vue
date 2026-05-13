@@ -3,23 +3,29 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 
 import PageHeader from "../components/PageHeader.vue";
+import { fetchConntrackEntries, type ConntrackEntry } from "../api/conntrack";
 import {
   applyFirewallRules,
   confirmFirewallRules,
+  createFirewallForwardRule,
   createFirewallRule,
+  deleteFirewallForwardRule,
   deleteFirewallRule,
   fetchFirewallForwardConfig,
+  fetchFirewallForwardRules,
   fetchFirewallPendingState,
   fetchFirewallRules,
   previewFirewallRules,
-  updateFirewallRule,
   updateFirewallForwardConfig,
+  updateFirewallForwardRule,
+  updateFirewallRule,
   type FirewallForwardConfig,
+  type FirewallForwardRule,
+  type FirewallForwardRulePayload,
   type FirewallPendingState,
   type FirewallRule,
   type FirewallRulePayload,
 } from "../api/firewall";
-import { fetchConntrackEntries, type ConntrackEntry } from "../api/conntrack";
 
 const loading = ref(false);
 const saving = ref(false);
@@ -29,15 +35,20 @@ const editingId = ref<number | null>(null);
 const items = ref<FirewallRule[]>([]);
 const previewText = ref("");
 const pendingState = ref<FirewallPendingState | null>(null);
+
 const forwardSaving = ref(false);
-const conntrackLoading = ref(false);
-const conntrackSourceIP = ref("");
-const conntrackItems = ref<ConntrackEntry[]>([]);
-const forwardConfig = reactive<FirewallForwardConfig>({
+const forwardEditingId = ref<number | null>(null);
+const forwardItems = ref<FirewallForwardRule[]>([]);
+const legacyForwardSaving = ref(false);
+const legacyForwardConfig = reactive<FirewallForwardConfig>({
   enabled: false,
   wgInterface: "wg0",
   lanCidr: "",
 });
+
+const conntrackLoading = ref(false);
+const conntrackSourceIP = ref("");
+const conntrackItems = ref<ConntrackEntry[]>([]);
 
 const form = reactive<FirewallRulePayload>({
   name: "",
@@ -53,8 +64,21 @@ const form = reactive<FirewallRulePayload>({
   description: "",
 });
 
-const actionLabel = computed(() => (editingId.value ? "更新规则" : "新增规则"));
+const forwardForm = reactive<FirewallForwardRulePayload>({
+  name: "",
+  sourceCidr: "10.66.66.0/24",
+  destinationCidr: "",
+  protocol: "any",
+  destinationPort: 0,
+  enabled: true,
+  priority: 0,
+  description: "",
+});
+
+const actionLabel = computed(() => (editingId.value ? "更新 input 规则" : "新增 input 规则"));
 const isCustom = computed(() => form.kind === "custom");
+const forwardActionLabel = computed(() => (forwardEditingId.value ? "更新 forward 规则" : "新增 forward 规则"));
+const usesLegacyForwardFallback = computed(() => forwardItems.value.length === 0 && legacyForwardConfig.enabled);
 
 function resetForm() {
   editingId.value = null;
@@ -71,21 +95,35 @@ function resetForm() {
   form.description = "";
 }
 
+function resetForwardForm() {
+  forwardEditingId.value = null;
+  forwardForm.name = "";
+  forwardForm.sourceCidr = "10.66.66.0/24";
+  forwardForm.destinationCidr = "";
+  forwardForm.protocol = "any";
+  forwardForm.destinationPort = 0;
+  forwardForm.enabled = true;
+  forwardForm.priority = 0;
+  forwardForm.description = "";
+}
+
 async function load() {
   loading.value = true;
   try {
-    const [rules, pending, forward] = await Promise.all([
+    const [rules, pending, forwardRules, legacyForward] = await Promise.all([
       fetchFirewallRules(),
       fetchFirewallPendingState(),
+      fetchFirewallForwardRules(),
       fetchFirewallForwardConfig(),
     ]);
     items.value = rules.items;
     pendingState.value = pending.pendingState;
-    forwardConfig.enabled = forward.enabled;
-    forwardConfig.wgInterface = forward.wgInterface;
-    forwardConfig.lanCidr = forward.lanCidr;
+    forwardItems.value = forwardRules.items;
+    legacyForwardConfig.enabled = legacyForward.enabled;
+    legacyForwardConfig.wgInterface = legacyForward.wgInterface;
+    legacyForwardConfig.lanCidr = legacyForward.lanCidr;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "加载防火墙规则失败");
+    ElMessage.error(error instanceof Error ? error.message : "加载防火墙配置失败");
   } finally {
     loading.value = false;
   }
@@ -106,27 +144,60 @@ function startEdit(item: FirewallRule) {
   form.description = item.description;
 }
 
+function startForwardEdit(item: FirewallForwardRule) {
+  forwardEditingId.value = item.id;
+  forwardForm.name = item.name;
+  forwardForm.sourceCidr = item.sourceCidr;
+  forwardForm.destinationCidr = item.destinationCidr;
+  forwardForm.protocol = item.protocol;
+  forwardForm.destinationPort = item.destinationPort;
+  forwardForm.enabled = item.enabled;
+  forwardForm.priority = item.priority;
+  forwardForm.description = item.description;
+}
+
 async function submit() {
   saving.value = true;
   try {
     if (editingId.value) {
       await updateFirewallRule(editingId.value, { ...form });
-      ElMessage.success("防火墙规则已更新");
+      ElMessage.success("input 规则已更新");
     } else {
       await createFirewallRule({ ...form });
-      ElMessage.success("防火墙规则已创建");
+      ElMessage.success("input 规则已创建");
     }
     resetForm();
     await load();
+    await preview();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "保存防火墙规则失败");
+    ElMessage.error(error instanceof Error ? error.message : "保存 input 规则失败");
   } finally {
     saving.value = false;
   }
 }
 
+async function submitForward() {
+  forwardSaving.value = true;
+  try {
+    if (forwardEditingId.value) {
+      await updateFirewallForwardRule(forwardEditingId.value, { ...forwardForm });
+      ElMessage.success("forward 规则已更新");
+    } else {
+      await createFirewallForwardRule({ ...forwardForm });
+      ElMessage.success("forward 规则已创建");
+    }
+    resetForwardForm();
+    await load();
+    await preview();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "保存 forward 规则失败");
+  } finally {
+    forwardSaving.value = false;
+  }
+}
+
 async function remove(item: FirewallRule) {
-  await ElMessageBox.confirm(`确定删除规则 "${item.name}" 吗？`, "删除确认", { type: "warning" });
+  await ElMessageBox.confirm(`确定删除 input 规则 "${item.name}" 吗？`, "删除确认", { type: "warning" });
   try {
     await deleteFirewallRule(item.id);
     ElMessage.success("规则已删除");
@@ -134,8 +205,24 @@ async function remove(item: FirewallRule) {
       resetForm();
     }
     await load();
+    await preview();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "删除规则失败");
+  }
+}
+
+async function removeForward(item: FirewallForwardRule) {
+  await ElMessageBox.confirm(`确定删除 forward 规则 "${item.name}" 吗？`, "删除确认", { type: "warning" });
+  try {
+    await deleteFirewallForwardRule(item.id);
+    ElMessage.success("forward 规则已删除");
+    if (forwardEditingId.value === item.id) {
+      resetForwardForm();
+    }
+    await load();
+    await preview();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "删除 forward 规则失败");
   }
 }
 
@@ -175,22 +262,22 @@ async function confirm() {
   }
 }
 
-async function saveForward() {
-  forwardSaving.value = true;
+async function saveLegacyForward() {
+  legacyForwardSaving.value = true;
   try {
     const updated = await updateFirewallForwardConfig({
-      enabled: forwardConfig.enabled,
-      lanCidr: forwardConfig.lanCidr,
+      enabled: legacyForwardConfig.enabled,
+      lanCidr: legacyForwardConfig.lanCidr,
     });
-    forwardConfig.enabled = updated.enabled;
-    forwardConfig.wgInterface = updated.wgInterface;
-    forwardConfig.lanCidr = updated.lanCidr;
-    ElMessage.success("forward 链配置已更新");
+    legacyForwardConfig.enabled = updated.enabled;
+    legacyForwardConfig.wgInterface = updated.wgInterface;
+    legacyForwardConfig.lanCidr = updated.lanCidr;
+    ElMessage.success("兼容 forward 配置已更新");
     await preview();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "保存 forward 配置失败");
+    ElMessage.error(error instanceof Error ? error.message : "保存兼容 forward 配置失败");
   } finally {
-    forwardSaving.value = false;
+    legacyForwardSaving.value = false;
   }
 }
 
@@ -219,18 +306,13 @@ onMounted(async () => {
       <div class="page-card__body">
         <PageHeader
           title="防火墙"
-          description="这轮先只管理 nftables 的 input 链，并带真实 apply、确认和 30 秒自动回滚。"
+          description="当前已支持 input 规则、独立 forward 规则，以及真实 apply、确认和 30 秒自动回滚。"
         >
           <el-space>
             <el-button :loading="loading" @click="load">刷新规则</el-button>
             <el-button @click="preview">预览</el-button>
             <el-button type="warning" :loading="applying" @click="apply">应用</el-button>
-            <el-button
-              v-if="pendingState?.pending"
-              type="success"
-              :loading="confirming"
-              @click="confirm"
-            >
+            <el-button v-if="pendingState?.pending" type="success" :loading="confirming" @click="confirm">
               确认生效
             </el-button>
           </el-space>
@@ -245,27 +327,13 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="page-card">
-      <div class="page-card__body">
-        <PageHeader
-          title="Forward 链"
-          description="这里先只支持一个固定场景：允许 WireGuard 接口访问单个家庭内网网段。"
-        >
-          <el-space>
-            <el-tag type="info">接口 {{ forwardConfig.wgInterface || "wg0" }}</el-tag>
-            <el-button type="primary" :loading="forwardSaving" @click="saveForward">保存 forward 配置</el-button>
-          </el-space>
-        </PageHeader>
-        <div class="forward-row">
-          <el-switch v-model="forwardConfig.enabled" active-text="启用 wg0 -> 内网放行" />
-          <el-input v-model="forwardConfig.lanCidr" placeholder="如 192.168.1.0/24" />
-        </div>
-      </div>
-    </section>
-
     <section class="firewall-grid">
       <article class="page-card">
         <div class="page-card__body">
+          <PageHeader
+            title="Input 规则"
+            description="管理公网入站放行规则，适合 SSH、HTTP、HTTPS、WireGuard 等端口。"
+          />
           <h3>{{ actionLabel }}</h3>
           <el-form label-position="top">
             <el-form-item label="规则名称">
@@ -357,13 +425,113 @@ onMounted(async () => {
               </template>
             </el-table-column>
           </el-table>
-
-          <el-divider />
-
-          <h3>规则预览</h3>
-          <pre class="preview">{{ previewText || "点击“预览”查看最终 nftables 规则文本。" }}</pre>
         </div>
       </article>
+    </section>
+
+    <section class="firewall-grid">
+      <article class="page-card">
+        <div class="page-card__body">
+          <PageHeader
+            title="Forward 规则"
+            description="独立管理 WireGuard 到内网的转发放行规则，优先服务 VPN 客户端访问家庭网络。"
+          />
+          <h3>{{ forwardActionLabel }}</h3>
+          <el-form label-position="top">
+            <el-form-item label="规则名称">
+              <el-input v-model="forwardForm.name" placeholder="如 wg-lan-https" />
+            </el-form-item>
+            <el-form-item label="来源 CIDR">
+              <el-input v-model="forwardForm.sourceCidr" placeholder="如 10.66.66.0/24" />
+            </el-form-item>
+            <el-form-item label="目标 CIDR">
+              <el-input v-model="forwardForm.destinationCidr" placeholder="如 192.168.1.0/24" />
+            </el-form-item>
+            <el-form-item label="协议">
+              <el-select v-model="forwardForm.protocol">
+                <el-option label="ANY" value="any" />
+                <el-option label="TCP" value="tcp" />
+                <el-option label="UDP" value="udp" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="forwardForm.protocol === 'tcp' || forwardForm.protocol === 'udp'" label="目标端口">
+              <el-input-number v-model="forwardForm.destinationPort" :min="0" :max="65535" />
+            </el-form-item>
+            <el-form-item label="优先级">
+              <el-input-number v-model="forwardForm.priority" :min="0" :max="999" />
+            </el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="forwardForm.description" type="textarea" :rows="3" placeholder="可选备注" />
+            </el-form-item>
+            <el-form-item>
+              <el-switch v-model="forwardForm.enabled" active-text="启用这条规则" />
+            </el-form-item>
+            <el-space>
+              <el-button type="primary" :loading="forwardSaving" @click="submitForward">{{ forwardActionLabel }}</el-button>
+              <el-button @click="resetForwardForm">重置</el-button>
+            </el-space>
+          </el-form>
+        </div>
+      </article>
+
+      <article class="page-card">
+        <div class="page-card__body">
+          <el-table :data="forwardItems">
+            <el-table-column prop="priority" label="优先级" width="90" />
+            <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column prop="sourceCidr" label="来源 CIDR" min-width="160" />
+            <el-table-column prop="destinationCidr" label="目标 CIDR" min-width="160" />
+            <el-table-column prop="protocol" label="协议" width="100" />
+            <el-table-column prop="destinationPort" label="目标端口" width="110" />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? "启用" : "停用" }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" fixed="right">
+              <template #default="{ row }">
+                <el-space>
+                  <el-button link type="primary" @click="startForwardEdit(row)">编辑</el-button>
+                  <el-button link type="danger" @click="removeForward(row)">删除</el-button>
+                </el-space>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-alert
+            v-if="usesLegacyForwardFallback"
+            class="legacy-alert"
+            title="当前还没有独立 forward 规则，预览和应用时会继续兼容旧的 wg0 -> 内网单网段配置。"
+            type="info"
+            :closable="false"
+          />
+        </div>
+      </article>
+    </section>
+
+    <section class="page-card">
+      <div class="page-card__body">
+        <PageHeader
+          title="兼容 Forward 配置"
+          description="保留旧的单网段兼容配置；仅当你还没有创建独立 forward 规则时，才会参与最终渲染。"
+        >
+          <el-space>
+            <el-tag type="info">接口 {{ legacyForwardConfig.wgInterface || "wg0" }}</el-tag>
+            <el-button type="primary" :loading="legacyForwardSaving" @click="saveLegacyForward">保存兼容配置</el-button>
+          </el-space>
+        </PageHeader>
+        <div class="forward-row">
+          <el-switch v-model="legacyForwardConfig.enabled" active-text="启用旧的 wg0 -> 内网兼容配置" />
+          <el-input v-model="legacyForwardConfig.lanCidr" placeholder="如 192.168.1.0/24" />
+        </div>
+      </div>
+    </section>
+
+    <section class="page-card">
+      <div class="page-card__body">
+        <h3>规则预览</h3>
+        <pre class="preview">{{ previewText || "点击“预览”查看最终 nftables 规则文本。" }}</pre>
+      </div>
     </section>
 
     <section class="page-card">
@@ -407,7 +575,7 @@ onMounted(async () => {
 
 .forward-row {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 16px;
   align-items: center;
 }
@@ -423,6 +591,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.legacy-alert {
+  margin-top: 16px;
 }
 
 .preview {

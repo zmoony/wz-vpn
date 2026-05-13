@@ -83,6 +83,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			protected.GET("/firewall/pending", firewallHandler.Pending)
 			protected.GET("/firewall/forward", firewallHandler.GetForwardConfig)
 			protected.PUT("/firewall/forward", firewallHandler.UpdateForwardConfig)
+			protected.GET("/firewall/forward-rules", firewallHandler.ListForwardRules)
+			protected.POST("/firewall/forward-rules", firewallHandler.CreateForwardRule)
+			protected.PUT("/firewall/forward-rules/:id", firewallHandler.UpdateForwardRule)
+			protected.DELETE("/firewall/forward-rules/:id", firewallHandler.DeleteForwardRule)
 			protected.GET("/firewall/conntrack", firewallHandler.Conntrack)
 			protected.GET("/settings", moduleHandler.List("settings"))
 		}

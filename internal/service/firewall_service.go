@@ -21,6 +21,7 @@ var (
 
 type FirewallService struct {
 	Rules        store.FirewallRuleStore
+	ForwardRules store.FirewallForwardRuleStore
 	Settings     store.SettingStore
 	Manager      nftables.Manager
 	PendingTTL   time.Duration
@@ -47,6 +48,17 @@ type UpsertFirewallRuleInput struct {
 type UpsertFirewallForwardInput struct {
 	Enabled bool   `json:"enabled"`
 	LanCIDR string `json:"lanCidr"`
+}
+
+type UpsertFirewallForwardRuleInput struct {
+	Name            string `json:"name"`
+	SourceCIDR      string `json:"sourceCidr"`
+	DestinationCIDR string `json:"destinationCidr"`
+	Protocol        string `json:"protocol"`
+	DestinationPort int    `json:"destinationPort"`
+	Enabled         bool   `json:"enabled"`
+	Priority        int    `json:"priority"`
+	Description     string `json:"description"`
 }
 
 const (
@@ -115,11 +127,15 @@ func (s *FirewallService) Preview(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	forwardRules, err := s.ForwardRules.List(ctx)
+	if err != nil {
+		return "", err
+	}
 	forward, err := s.GetForwardConfig(ctx)
 	if err != nil {
 		return "", err
 	}
-	return s.Manager.RenderRules(rules, forward), nil
+	return s.Manager.RenderRules(rules, forwardRules, forward), nil
 }
 
 func (s *FirewallService) Apply(ctx context.Context) (*domain.FirewallPendingState, string, error) {
@@ -138,12 +154,16 @@ func (s *FirewallService) Apply(ctx context.Context) (*domain.FirewallPendingSta
 	if err != nil {
 		return nil, "", err
 	}
+	forwardRules, err := s.ForwardRules.List(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	forward, err := s.GetForwardConfig(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	candidate := s.Manager.RenderRules(rules, forward)
-	rollbackText := s.Manager.RenderRules(nil, domain.FirewallForwardConfig{})
+	candidate := s.Manager.RenderRules(rules, forwardRules, forward)
+	rollbackText := s.Manager.RenderRules(nil, nil, domain.FirewallForwardConfig{})
 	state, err = s.Manager.Apply(ctx, candidate, rollbackText, s.PendingTTL)
 	if err != nil {
 		return nil, candidate, err
@@ -181,6 +201,50 @@ func (s *FirewallService) GetForwardConfig(ctx context.Context) (domain.Firewall
 		WGInterface: s.DefaultWGInterface,
 		LanCIDR:     strings.TrimSpace(lanCIDR),
 	}, nil
+}
+
+func (s *FirewallService) ListForwardRules(ctx context.Context) ([]domain.FirewallForwardRule, error) {
+	return s.ForwardRules.List(ctx)
+}
+
+func (s *FirewallService) CreateForwardRule(ctx context.Context, input UpsertFirewallForwardRuleInput) (*domain.FirewallForwardRule, error) {
+	item, err := s.buildForwardRule(ctx, input, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ForwardRules.Create(ctx, item); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (s *FirewallService) UpdateForwardRule(ctx context.Context, id int64, input UpsertFirewallForwardRuleInput) (*domain.FirewallForwardRule, error) {
+	current, err := s.ForwardRules.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, ErrFirewallRuleNotFound
+	}
+	item, err := s.buildForwardRule(ctx, input, current)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ForwardRules.Update(ctx, item); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (s *FirewallService) DeleteForwardRule(ctx context.Context, id int64) error {
+	current, err := s.ForwardRules.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return ErrFirewallRuleNotFound
+	}
+	return s.ForwardRules.Delete(ctx, id)
 }
 
 func (s *FirewallService) UpdateForwardConfig(ctx context.Context, input UpsertFirewallForwardInput) (domain.FirewallForwardConfig, error) {
@@ -290,6 +354,71 @@ func validateFirewallInput(input UpsertFirewallRuleInput) error {
 		if _, _, err := net.ParseCIDR(source); err != nil && net.ParseIP(source) == nil {
 			return errors.New("source cidr must be a valid IP or CIDR")
 		}
+	}
+	return nil
+}
+
+func (s *FirewallService) buildForwardRule(ctx context.Context, input UpsertFirewallForwardRuleInput, current *domain.FirewallForwardRule) (*domain.FirewallForwardRule, error) {
+	if err := validateFirewallForwardRuleInput(input); err != nil {
+		return nil, err
+	}
+	priority := input.Priority
+	if priority <= 0 {
+		if current != nil {
+			priority = current.Priority
+		} else {
+			next, err := s.ForwardRules.NextPriority(ctx)
+			if err != nil {
+				return nil, err
+			}
+			priority = next
+		}
+	}
+	item := &domain.FirewallForwardRule{
+		Name:            strings.TrimSpace(input.Name),
+		SourceCIDR:      strings.TrimSpace(input.SourceCIDR),
+		DestinationCIDR: strings.TrimSpace(input.DestinationCIDR),
+		Protocol:        strings.ToLower(strings.TrimSpace(input.Protocol)),
+		DestinationPort: input.DestinationPort,
+		Enabled:         input.Enabled,
+		Priority:        priority,
+		Description:     strings.TrimSpace(input.Description),
+	}
+	if current != nil {
+		item.ID = current.ID
+		item.CreatedAt = current.CreatedAt
+		item.UpdatedAt = current.UpdatedAt
+	}
+	return item, nil
+}
+
+func validateFirewallForwardRuleInput(input UpsertFirewallForwardRuleInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return errors.New("forward rule name is required")
+	}
+	source := strings.TrimSpace(input.SourceCIDR)
+	destination := strings.TrimSpace(input.DestinationCIDR)
+	if source == "" || destination == "" {
+		return errors.New("source cidr and destination cidr are required")
+	}
+	if _, _, err := net.ParseCIDR(source); err != nil {
+		return errors.New("source cidr must be a valid CIDR")
+	}
+	if _, _, err := net.ParseCIDR(destination); err != nil {
+		return errors.New("destination cidr must be a valid CIDR")
+	}
+	protocol := strings.ToLower(strings.TrimSpace(input.Protocol))
+	switch protocol {
+	case "", "any":
+		if input.DestinationPort > 0 {
+			return errors.New("destination port requires tcp or udp protocol")
+		}
+	case "tcp", "udp":
+		if input.DestinationPort < 0 || input.DestinationPort > 65535 {
+			return errors.New("destination port must be between 0 and 65535")
+		}
+	default:
+		return errors.New("forward protocol must be any, tcp, or udp")
 	}
 	return nil
 }

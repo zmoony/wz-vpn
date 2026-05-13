@@ -41,3 +41,21 @@
 **需求阶段**（文档版本 v1.1）—— 已完成需求澄清，等待用户确认后进入设计阶段。
 
 下一步：用户确认 `docs/01-需求规格说明书.md` → 进入架构设计细化 → systemd 基线 + 管理面板骨架并行开发。
+
+## 最小安装链路
+
+当前仓库已补充第一版最小安装文件：
+
+- 环境变量模板：[`/.env.example`](D:/project/code/self_util_plugin/vpn/.env.example)
+- systemd unit：[`/deploy/pi-gateway.service`](D:/project/code/self_util_plugin/vpn/deploy/pi-gateway.service)
+- 安装脚本：[`/scripts/install.sh`](D:/project/code/self_util_plugin/vpn/scripts/install.sh)
+
+安装脚本默认面向 Linux 宿主机，目标目录为 `/opt/pi-gateway`，会完成：
+
+- 创建程序、配置、数据目录
+- 安装 `pi-gateway` 二进制
+- 复制 `web/dist` 静态资源（如果存在）
+- 安装 env 模板和 systemd unit
+- 执行 `systemctl daemon-reload` 与 `systemctl enable`
+
+脚本不会自动安装 `wg`、`nginx`、`nftables`、`acme.sh`、`ddns-go` 等系统依赖；这些仍需要在目标机器上自行准备。

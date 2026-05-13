@@ -125,6 +125,69 @@ func (h FirewallHandler) GetForwardConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, config)
 }
 
+func (h FirewallHandler) ListForwardRules(c *gin.Context) {
+	items, err := h.Service.ListForwardRules(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h FirewallHandler) CreateForwardRule(c *gin.Context) {
+	var request service.UpsertFirewallForwardRuleInput
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	item, err := h.Service.CreateForwardRule(c.Request.Context(), request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, item)
+}
+
+func (h FirewallHandler) UpdateForwardRule(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid firewall forward rule id"})
+		return
+	}
+	var request service.UpsertFirewallForwardRuleInput
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	item, err := h.Service.UpdateForwardRule(c.Request.Context(), id, request)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err == service.ErrFirewallRuleNotFound {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+func (h FirewallHandler) DeleteForwardRule(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid firewall forward rule id"})
+		return
+	}
+	if err := h.Service.DeleteForwardRule(c.Request.Context(), id); err != nil {
+		status := http.StatusInternalServerError
+		if err == service.ErrFirewallRuleNotFound {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"message": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h FirewallHandler) UpdateForwardConfig(c *gin.Context) {
 	var request service.UpsertFirewallForwardInput
 	if err := c.ShouldBindJSON(&request); err != nil {

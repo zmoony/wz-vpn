@@ -48,6 +48,45 @@ func (s *firewallStoreStub) Delete(_ context.Context, id int64) error {
 }
 func (s *firewallStoreStub) NextPriority(context.Context) (int, error) { return len(s.items) + 1, nil }
 
+type firewallForwardStoreStub struct {
+	items []domain.FirewallForwardRule
+}
+
+func (s *firewallForwardStoreStub) List(context.Context) ([]domain.FirewallForwardRule, error) { return s.items, nil }
+func (s *firewallForwardStoreStub) FindByID(_ context.Context, id int64) (*domain.FirewallForwardRule, error) {
+	for _, item := range s.items {
+		if item.ID == id {
+			copy := item
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+func (s *firewallForwardStoreStub) Create(_ context.Context, item *domain.FirewallForwardRule) error {
+	item.ID = int64(len(s.items) + 1)
+	s.items = append(s.items, *item)
+	return nil
+}
+func (s *firewallForwardStoreStub) Update(_ context.Context, item *domain.FirewallForwardRule) error {
+	for i := range s.items {
+		if s.items[i].ID == item.ID {
+			s.items[i] = *item
+		}
+	}
+	return nil
+}
+func (s *firewallForwardStoreStub) Delete(_ context.Context, id int64) error {
+	filtered := s.items[:0]
+	for _, item := range s.items {
+		if item.ID != id {
+			filtered = append(filtered, item)
+		}
+	}
+	s.items = filtered
+	return nil
+}
+func (s *firewallForwardStoreStub) NextPriority(context.Context) (int, error) { return len(s.items) + 1, nil }
+
 type settingStoreStub struct {
 	values map[string]string
 }
@@ -72,16 +111,22 @@ type nftManagerStub struct {
 	state *domain.FirewallPendingState
 }
 
-func (s *nftManagerStub) RenderInputRules(rules []domain.FirewallRule) string {
-	panic("old method should not be called")
-}
-func (s *nftManagerStub) RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string {
+func (s *nftManagerStub) RenderRules(rules []domain.FirewallRule, forwardRules []domain.FirewallForwardRule, forward domain.FirewallForwardConfig) string {
 	var names []string
 	for _, rule := range rules {
 		names = append(names, rule.Name)
 	}
 	text := strings.Join(names, "\n")
-	if forward.Enabled && forward.LanCIDR != "" {
+	for _, rule := range forwardRules {
+		if !rule.Enabled {
+			continue
+		}
+		if text != "" {
+			text += "\n"
+		}
+		text += "fwd:" + rule.SourceCIDR + "->" + rule.DestinationCIDR
+	}
+	if len(forwardRules) == 0 && forward.Enabled && forward.LanCIDR != "" {
 		if text != "" {
 			text += "\n"
 		}
@@ -117,7 +162,7 @@ func TestFirewallPreviewIncludesOrderedRules(t *testing.T) {
 		},
 	}
 	manager := &nftManagerStub{}
-	service := FirewallService{Rules: store, Settings: &settingStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
+	service := FirewallService{Rules: store, ForwardRules: &firewallForwardStoreStub{}, Settings: &settingStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
 
 	preview, err := service.Preview(context.Background())
 	if err != nil {
@@ -137,7 +182,7 @@ func TestFirewallApplyStartsPendingState(t *testing.T) {
 		firewallForwardEnabledKey: "true",
 		firewallForwardCIDRKey:    "192.168.1.0/24",
 	}}
-	service := FirewallService{Rules: store, Settings: settings, Manager: manager, PendingTTL: 30 * time.Second, DefaultWGInterface: "wg0"}
+	service := FirewallService{Rules: store, ForwardRules: &firewallForwardStoreStub{}, Settings: settings, Manager: manager, PendingTTL: 30 * time.Second, DefaultWGInterface: "wg0"}
 
 	state, candidate, err := service.Apply(context.Background())
 	if err != nil {
@@ -155,7 +200,7 @@ func TestFirewallConfirmClearsPendingState(t *testing.T) {
 	manager := &nftManagerStub{
 		state: &domain.FirewallPendingState{Pending: true},
 	}
-	service := FirewallService{Settings: &settingStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
+	service := FirewallService{Settings: &settingStoreStub{}, ForwardRules: &firewallForwardStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
 
 	if err := service.Confirm(context.Background()); err != nil {
 		t.Fatalf("Confirm() error = %v", err)
@@ -178,5 +223,51 @@ func TestFirewallUpdateForwardConfigStoresCIDR(t *testing.T) {
 	}
 	if !config.Enabled || config.LanCIDR != "192.168.1.0/24" || config.WGInterface != "wg0" {
 		t.Fatalf("unexpected config: %#v", config)
+	}
+}
+
+func TestFirewallPreviewUsesExplicitForwardRulesWhenPresent(t *testing.T) {
+	service := FirewallService{
+		Rules: &firewallStoreStub{items: []domain.FirewallRule{{Name: "ssh", Priority: 1, Enabled: true}}},
+		ForwardRules: &firewallForwardStoreStub{items: []domain.FirewallForwardRule{
+			{Name: "wg-lan", SourceCIDR: "10.66.66.0/24", DestinationCIDR: "192.168.1.0/24", Enabled: true, Priority: 1},
+		}},
+		Settings: &settingStoreStub{values: map[string]string{
+			firewallForwardEnabledKey: "true",
+			firewallForwardCIDRKey:    "192.168.1.0/24",
+		}},
+		Manager:    &nftManagerStub{},
+		PendingTTL: 30 * time.Second,
+	}
+
+	preview, err := service.Preview(context.Background())
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if !strings.Contains(preview, "fwd:10.66.66.0/24->192.168.1.0/24") {
+		t.Fatalf("expected explicit forward rule in preview, got %q", preview)
+	}
+	if strings.Contains(preview, "forward:192.168.1.0/24") {
+		t.Fatalf("expected legacy forward config to be ignored when explicit rules exist, got %q", preview)
+	}
+}
+
+func TestFirewallCreateForwardRuleAssignsPriority(t *testing.T) {
+	store := &firewallForwardStoreStub{}
+	service := FirewallService{ForwardRules: store}
+
+	item, err := service.CreateForwardRule(context.Background(), UpsertFirewallForwardRuleInput{
+		Name:            "wg-lan",
+		SourceCIDR:      "10.66.66.0/24",
+		DestinationCIDR: "192.168.1.0/24",
+		Protocol:        "tcp",
+		DestinationPort: 443,
+		Enabled:         true,
+	})
+	if err != nil {
+		t.Fatalf("CreateForwardRule() error = %v", err)
+	}
+	if item.Priority != 1 || item.ID == 0 {
+		t.Fatalf("unexpected item after create: %#v", item)
 	}
 }

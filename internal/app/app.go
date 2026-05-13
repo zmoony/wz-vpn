@@ -49,6 +49,7 @@ func New() (*Application, error) {
 	ddnsStore := store.SQLiteDDNSConfigStore{DB: db}
 	certStore := store.SQLiteCertificateConfigStore{DB: db}
 	firewallStore := store.SQLiteFirewallRuleStore{DB: db}
+	forwardRuleStore := store.SQLiteFirewallForwardRuleStore{DB: db}
 
 	authService := service.AuthService{
 		Users:          userStore,
@@ -117,6 +118,7 @@ func New() (*Application, error) {
 	}
 	firewallService := &service.FirewallService{
 		Rules:              firewallStore,
+		ForwardRules:       forwardRuleStore,
 		Settings:           store.SQLiteSettingStore{DB: db},
 		Manager:            nftManager,
 		PendingTTL:         time.Duration(cfg.FirewallPendingSeconds) * time.Second,

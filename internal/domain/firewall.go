@@ -33,3 +33,17 @@ type FirewallForwardConfig struct {
 	WGInterface string `json:"wgInterface"`
 	LanCIDR    string `json:"lanCidr"`
 }
+
+type FirewallForwardRule struct {
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	SourceCIDR      string    `json:"sourceCidr"`
+	DestinationCIDR string    `json:"destinationCidr"`
+	Protocol        string    `json:"protocol"`
+	DestinationPort int       `json:"destinationPort"`
+	Enabled         bool      `json:"enabled"`
+	Priority        int       `json:"priority"`
+	Description     string    `json:"description"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}

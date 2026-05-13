@@ -32,6 +32,20 @@ export type FirewallForwardConfig = {
   lanCidr: string;
 };
 
+export type FirewallForwardRule = {
+  id: number;
+  name: string;
+  sourceCidr: string;
+  destinationCidr: string;
+  protocol: string;
+  destinationPort: number;
+  enabled: boolean;
+  priority: number;
+  description: string;
+};
+
+export type FirewallForwardRulePayload = Omit<FirewallForwardRule, "id">;
+
 export async function fetchFirewallRules() {
   const response = await client.get("/firewall/rules");
   return response.data as { items: FirewallRule[] };
@@ -79,4 +93,23 @@ export async function fetchFirewallForwardConfig() {
 export async function updateFirewallForwardConfig(payload: { enabled: boolean; lanCidr: string }) {
   const response = await client.put("/firewall/forward", payload);
   return response.data as FirewallForwardConfig;
+}
+
+export async function fetchFirewallForwardRules() {
+  const response = await client.get("/firewall/forward-rules");
+  return response.data as { items: FirewallForwardRule[] };
+}
+
+export async function createFirewallForwardRule(payload: FirewallForwardRulePayload) {
+  const response = await client.post("/firewall/forward-rules", payload);
+  return response.data as FirewallForwardRule;
+}
+
+export async function updateFirewallForwardRule(id: number, payload: FirewallForwardRulePayload) {
+  const response = await client.put(`/firewall/forward-rules/${id}`, payload);
+  return response.data as FirewallForwardRule;
+}
+
+export async function deleteFirewallForwardRule(id: number) {
+  await client.delete(`/firewall/forward-rules/${id}`);
 }
