@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+	"os/exec"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -206,8 +208,16 @@ func (h FirewallHandler) Conntrack(c *gin.Context) {
 	sourceIP := c.Query("source_ip")
 	items, err := h.ConntrackService.List(c.Request.Context(), sourceIP)
 	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			c.JSON(http.StatusOK, gin.H{
+				"available": false,
+				"message":   "conntrack command is not available on this host",
+				"items":     []any{},
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{"available": true, "message": "", "items": items})
 }

@@ -21,6 +21,7 @@ type Dependencies struct {
 	CertService   service.CertificateService
 	FirewallService *service.FirewallService
 	ConntrackService service.ConntrackService
+	SettingsService service.SettingsService
 }
 
 func NewRouter(deps Dependencies) *gin.Engine {
@@ -40,7 +41,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	ddnsHandler := DDNSHandler{Service: deps.DDNSService}
 	certHandler := CertificateHandler{Service: deps.CertService}
 	firewallHandler := FirewallHandler{Service: deps.FirewallService, ConntrackService: deps.ConntrackService}
-	moduleHandler := ModuleStubHandler{}
+	settingsHandler := SettingsHandler{Service: deps.SettingsService}
 
 	apiGroup := engine.Group("/api")
 	{
@@ -88,7 +89,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			protected.PUT("/firewall/forward-rules/:id", firewallHandler.UpdateForwardRule)
 			protected.DELETE("/firewall/forward-rules/:id", firewallHandler.DeleteForwardRule)
 			protected.GET("/firewall/conntrack", firewallHandler.Conntrack)
-			protected.GET("/settings", moduleHandler.List("settings"))
+			protected.GET("/settings", settingsHandler.Get)
+			protected.PUT("/settings", settingsHandler.Update)
 		}
 	}
 

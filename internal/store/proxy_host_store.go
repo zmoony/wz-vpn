@@ -25,7 +25,7 @@ type SQLiteProxyHostStore struct {
 
 func (s SQLiteProxyHostStore) List(ctx context.Context) ([]domain.ProxyHost, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		select id, name, server_name, upstream_url, certificate_cert_path, certificate_key_path,
+		select id, name, server_name, upstream_url, certificate_root_domain, certificate_cert_path, certificate_key_path,
 		       enabled, description, last_apply_status, last_apply_error, last_applied_at,
 		       created_at, updated_at
 		from proxy_hosts
@@ -41,7 +41,7 @@ func (s SQLiteProxyHostStore) List(ctx context.Context) ([]domain.ProxyHost, err
 		var item domain.ProxyHost
 		var enabled int
 		if err := rows.Scan(
-			&item.ID, &item.Name, &item.ServerName, &item.UpstreamURL, &item.CertificateCertPath,
+			&item.ID, &item.Name, &item.ServerName, &item.UpstreamURL, &item.CertificateRootDomain, &item.CertificateCertPath,
 			&item.CertificateKeyPath, &enabled, &item.Description, &item.LastApplyStatus,
 			&item.LastApplyError, &item.LastAppliedAt, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
@@ -68,7 +68,7 @@ func (s SQLiteProxyHostStore) FindByServerName(ctx context.Context, serverName s
 
 func (s SQLiteProxyHostStore) findOne(ctx context.Context, filter string, value any) (*domain.ProxyHost, error) {
 	query := `
-		select id, name, server_name, upstream_url, certificate_cert_path, certificate_key_path,
+		select id, name, server_name, upstream_url, certificate_root_domain, certificate_cert_path, certificate_key_path,
 		       enabled, description, last_apply_status, last_apply_error, last_applied_at,
 		       created_at, updated_at
 		from proxy_hosts
@@ -78,7 +78,7 @@ func (s SQLiteProxyHostStore) findOne(ctx context.Context, filter string, value 
 	var item domain.ProxyHost
 	var enabled int
 	if err := row.Scan(
-		&item.ID, &item.Name, &item.ServerName, &item.UpstreamURL, &item.CertificateCertPath,
+		&item.ID, &item.Name, &item.ServerName, &item.UpstreamURL, &item.CertificateRootDomain, &item.CertificateCertPath,
 		&item.CertificateKeyPath, &enabled, &item.Description, &item.LastApplyStatus,
 		&item.LastApplyError, &item.LastAppliedAt, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
@@ -102,11 +102,11 @@ func (s SQLiteProxyHostStore) Create(ctx context.Context, host *domain.ProxyHost
 
 	result, err := s.DB.ExecContext(ctx, `
 		insert into proxy_hosts (
-			name, server_name, upstream_url, certificate_cert_path, certificate_key_path,
+			name, server_name, upstream_url, certificate_root_domain, certificate_cert_path, certificate_key_path,
 			enabled, description, last_apply_status, last_apply_error, last_applied_at, created_at, updated_at
 		)
-		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, host.Name, host.ServerName, host.UpstreamURL, host.CertificateCertPath, host.CertificateKeyPath,
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, host.Name, host.ServerName, host.UpstreamURL, host.CertificateRootDomain, host.CertificateCertPath, host.CertificateKeyPath,
 		enabled, host.Description, host.LastApplyStatus, host.LastApplyError, host.LastAppliedAt, host.CreatedAt, host.UpdatedAt)
 	if err != nil {
 		return err
@@ -124,10 +124,10 @@ func (s SQLiteProxyHostStore) Update(ctx context.Context, host *domain.ProxyHost
 	}
 	_, err := s.DB.ExecContext(ctx, `
 		update proxy_hosts
-		set name = ?, server_name = ?, upstream_url = ?, certificate_cert_path = ?, certificate_key_path = ?,
+		set name = ?, server_name = ?, upstream_url = ?, certificate_root_domain = ?, certificate_cert_path = ?, certificate_key_path = ?,
 		    enabled = ?, description = ?, last_apply_status = ?, last_apply_error = ?, last_applied_at = ?, updated_at = ?
 		where id = ?
-	`, host.Name, host.ServerName, host.UpstreamURL, host.CertificateCertPath, host.CertificateKeyPath,
+	`, host.Name, host.ServerName, host.UpstreamURL, host.CertificateRootDomain, host.CertificateCertPath, host.CertificateKeyPath,
 		enabled, host.Description, host.LastApplyStatus, host.LastApplyError, host.LastAppliedAt, host.UpdatedAt, host.ID)
 	return err
 }

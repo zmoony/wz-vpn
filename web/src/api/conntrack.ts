@@ -13,5 +13,5 @@ export async function fetchConntrackEntries(sourceIp = "") {
   const response = await client.get("/firewall/conntrack", {
     params: sourceIp ? { source_ip: sourceIp } : {},
   });
-  return response.data as { items: ConntrackEntry[] };
+  return response.data as { available: boolean; message: string; items: ConntrackEntry[] };
 }

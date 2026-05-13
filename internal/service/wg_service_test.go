@@ -56,7 +56,7 @@ func TestAllocateIPv4SkipsUsedAddresses(t *testing.T) {
 		SubnetV4: "10.66.66.0/24",
 	}
 
-	ip, err := service.allocateIPv4(context.Background())
+	ip, err := service.allocateIPv4(context.Background(), service.SubnetV4)
 	if err != nil {
 		t.Fatalf("allocateIPv4() error = %v", err)
 	}

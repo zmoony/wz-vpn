@@ -198,7 +198,7 @@ func (s *FirewallService) GetForwardConfig(ctx context.Context) (domain.Firewall
 	}
 	return domain.FirewallForwardConfig{
 		Enabled:     strings.EqualFold(enabledRaw, "true"),
-		WGInterface: s.DefaultWGInterface,
+		WGInterface: s.getSettingOrDefault(ctx, settingWireGuardInterface, s.DefaultWGInterface),
 		LanCIDR:     strings.TrimSpace(lanCIDR),
 	}, nil
 }
@@ -421,4 +421,15 @@ func validateFirewallForwardRuleInput(input UpsertFirewallForwardRuleInput) erro
 		return errors.New("forward protocol must be any, tcp, or udp")
 	}
 	return nil
+}
+
+func (s *FirewallService) getSettingOrDefault(ctx context.Context, key, fallback string) string {
+	if s.Settings == nil {
+		return fallback
+	}
+	value, err := s.Settings.Get(ctx, key)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }

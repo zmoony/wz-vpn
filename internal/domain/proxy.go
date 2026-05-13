@@ -7,6 +7,7 @@ type ProxyHost struct {
 	Name                string     `json:"name"`
 	ServerName          string     `json:"serverName"`
 	UpstreamURL         string     `json:"upstreamUrl"`
+	CertificateRootDomain string   `json:"certificateRootDomain"`
 	CertificateCertPath string     `json:"certificateCertPath"`
 	CertificateKeyPath  string     `json:"certificateKeyPath"`
 	Enabled             bool       `json:"enabled"`

@@ -17,6 +17,7 @@ var ErrPeerNotFound = errors.New("wireguard peer not found")
 
 type WireGuardService struct {
 	Peers          store.WireGuardPeerStore
+	Settings       store.SettingStore
 	Manager        wireguard.Manager
 	QRGenerator    wireguard.QRCodeGenerator
 	InterfaceName  string
@@ -44,7 +45,7 @@ func (s WireGuardService) List(ctx context.Context) ([]domain.WireGuardPeer, err
 		return nil, err
 	}
 
-	runtimePeers, err := s.Manager.ListRuntimePeers(ctx, s.InterfaceName)
+	runtimePeers, err := s.Manager.ListRuntimePeers(ctx, s.interfaceName(ctx))
 	if err != nil {
 		return peers, nil
 	}
@@ -79,7 +80,7 @@ func (s WireGuardService) Create(ctx context.Context, input CreatePeerInput) (*C
 		return nil, fmt.Errorf("peer name already exists")
 	}
 
-	allocatedIP, err := s.allocateIPv4(ctx)
+	allocatedIP, err := s.allocateIPv4(ctx, s.subnetV4(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -94,9 +95,9 @@ func (s WireGuardService) Create(ctx context.Context, input CreatePeerInput) (*C
 		ClientIPv4:          allocatedIP,
 		PublicKey:           publicKey,
 		PrivateKeyEncrypted: privateKey,
-		DNS:                 s.DefaultDNS,
+		DNS:                 s.defaultDNS(ctx),
 		AllowedIPs:          "192.168.1.0/24,10.66.66.1/32",
-		Endpoint:            s.ServerEndpoint,
+		Endpoint:            s.serverEndpoint(ctx),
 		PersistentKeepalive: 25,
 		Enabled:             true,
 		Description:         input.Description,
@@ -118,11 +119,11 @@ func (s WireGuardService) Create(ctx context.Context, input CreatePeerInput) (*C
 		Enabled:             peer.Enabled,
 		Description:         peer.Description,
 	}
-	if err := s.Manager.ApplyPeer(ctx, s.InterfaceName, spec); err != nil {
+	if err := s.Manager.ApplyPeer(ctx, s.interfaceName(ctx), spec); err != nil {
 		return nil, err
 	}
 
-	clientConf := s.buildClientConfig(spec)
+	clientConf := s.buildClientConfig(ctx, spec)
 	qrCode, err := s.QRGenerator.Encode(ctx, clientConf)
 	if err != nil {
 		return nil, err
@@ -146,7 +147,7 @@ func (s WireGuardService) Toggle(ctx context.Context, id int64) (*domain.WireGua
 
 	peer.Enabled = !peer.Enabled
 	if peer.Enabled {
-		err = s.Manager.ApplyPeer(ctx, s.InterfaceName, domain.WireGuardPeerSpec{
+		err = s.Manager.ApplyPeer(ctx, s.interfaceName(ctx), domain.WireGuardPeerSpec{
 			Name:                peer.Name,
 			ClientIPv4:          peer.ClientIPv4,
 			PublicKey:           peer.PublicKey,
@@ -159,7 +160,7 @@ func (s WireGuardService) Toggle(ctx context.Context, id int64) (*domain.WireGua
 			Description:         peer.Description,
 		})
 	} else {
-		err = s.Manager.RemovePeer(ctx, s.InterfaceName, peer.PublicKey)
+		err = s.Manager.RemovePeer(ctx, s.interfaceName(ctx), peer.PublicKey)
 	}
 	if err != nil {
 		return nil, err
@@ -181,15 +182,15 @@ func (s WireGuardService) Delete(ctx context.Context, id int64) error {
 		return ErrPeerNotFound
 	}
 
-	if err := s.Manager.RemovePeer(ctx, s.InterfaceName, peer.PublicKey); err != nil {
+	if err := s.Manager.RemovePeer(ctx, s.interfaceName(ctx), peer.PublicKey); err != nil {
 		return err
 	}
 
 	return s.Peers.Delete(ctx, id)
 }
 
-func (s WireGuardService) allocateIPv4(ctx context.Context) (string, error) {
-	_, network, err := net.ParseCIDR(s.SubnetV4)
+func (s WireGuardService) allocateIPv4(ctx context.Context, subnet string) (string, error) {
+	_, network, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return "", fmt.Errorf("parse wireguard subnet: %w", err)
 	}
@@ -214,8 +215,8 @@ func (s WireGuardService) allocateIPv4(ctx context.Context) (string, error) {
 	return "", errors.New("no available IPv4 address left in subnet")
 }
 
-func (s WireGuardService) buildClientConfig(spec domain.WireGuardPeerSpec) string {
-	serverAddress := s.ServerCIDRV4
+func (s WireGuardService) buildClientConfig(ctx context.Context, spec domain.WireGuardPeerSpec) string {
+	serverAddress := s.serverCIDRV4(ctx)
 	if ip, _, err := net.ParseCIDR(serverAddress); err == nil {
 		serverAddress = ip.String()
 	}
@@ -227,7 +228,7 @@ func (s WireGuardService) buildClientConfig(spec domain.WireGuardPeerSpec) strin
 		"DNS = " + spec.DNS,
 		"",
 		"[Peer]",
-		"PublicKey = " + s.ServerPublicKey,
+		"PublicKey = " + s.serverPublicKey(ctx),
 	}
 	if spec.PresharedKey != "" {
 		lines = append(lines, "PresharedKey = "+spec.PresharedKey)
@@ -240,4 +241,39 @@ func (s WireGuardService) buildClientConfig(spec domain.WireGuardPeerSpec) strin
 	)
 
 	return strings.Join(lines, "\n")
+}
+
+func (s WireGuardService) interfaceName(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardInterface, s.InterfaceName)
+}
+
+func (s WireGuardService) subnetV4(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardSubnetV4, s.SubnetV4)
+}
+
+func (s WireGuardService) serverCIDRV4(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardServerV4, s.ServerCIDRV4)
+}
+
+func (s WireGuardService) defaultDNS(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardDNS, s.DefaultDNS)
+}
+
+func (s WireGuardService) serverEndpoint(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardEndpoint, s.ServerEndpoint)
+}
+
+func (s WireGuardService) serverPublicKey(ctx context.Context) string {
+	return s.getSetting(ctx, settingWireGuardPublicKey, s.ServerPublicKey)
+}
+
+func (s WireGuardService) getSetting(ctx context.Context, key, fallback string) string {
+	if s.Settings == nil {
+		return fallback
+	}
+	value, err := s.Settings.Get(ctx, key)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }

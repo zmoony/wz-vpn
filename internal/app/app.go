@@ -44,6 +44,7 @@ func New() (*Application, error) {
 	}
 
 	userStore := store.SQLiteUserStore{DB: db}
+	settingsStore := store.SQLiteSettingStore{DB: db}
 	peerStore := store.SQLiteWireGuardPeerStore{DB: db}
 	proxyStore := store.SQLiteProxyHostStore{DB: db}
 	ddnsStore := store.SQLiteDDNSConfigStore{DB: db}
@@ -94,6 +95,7 @@ func New() (*Application, error) {
 
 	wgService := service.WireGuardService{
 		Peers:          peerStore,
+		Settings:       settingsStore,
 		Manager:        wireGuardManager,
 		QRGenerator:    qrGenerator,
 		InterfaceName:  cfg.WireGuardIface,
@@ -104,8 +106,9 @@ func New() (*Application, error) {
 		ServerCIDRV4:   cfg.WireGuardServerV4,
 	}
 	proxyService := service.ProxyService{
-		Hosts:   proxyStore,
-		Manager: nginxManager,
+		Hosts:        proxyStore,
+		Certificates: certStore,
+		Manager:      nginxManager,
 	}
 	ddnsService := service.DDNSService{
 		Configs: ddnsStore,
@@ -119,13 +122,17 @@ func New() (*Application, error) {
 	firewallService := &service.FirewallService{
 		Rules:              firewallStore,
 		ForwardRules:       forwardRuleStore,
-		Settings:           store.SQLiteSettingStore{DB: db},
+		Settings:           settingsStore,
 		Manager:            nftManager,
 		PendingTTL:         time.Duration(cfg.FirewallPendingSeconds) * time.Second,
 		DefaultWGInterface: cfg.WireGuardIface,
 	}
 	conntrackService := service.ConntrackService{
 		Manager: conntrackManager,
+	}
+	settingsService := service.SettingsService{
+		Settings: settingsStore,
+		Config:   cfg,
 	}
 	if err := firewallService.ResumePending(context.Background()); err != nil {
 		return nil, fmt.Errorf("resume firewall pending state: %w", err)
@@ -141,6 +148,7 @@ func New() (*Application, error) {
 		CertService:    certService,
 		FirewallService: firewallService,
 		ConntrackService: conntrackService,
+		SettingsService: settingsService,
 	})
 
 	server := &http.Server{

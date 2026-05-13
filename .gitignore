@@ -2,3 +2,6 @@ web/node_modules/
 web/dist/
 data/
 *.db
+.idea
+pi-gateway.exe
+pi-gateway.exe~

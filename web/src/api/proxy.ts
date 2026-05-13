@@ -5,6 +5,7 @@ export type ProxyHost = {
   name: string;
   serverName: string;
   upstreamUrl: string;
+  certificateRootDomain: string;
   certificateCertPath: string;
   certificateKeyPath: string;
   enabled: boolean;
@@ -14,10 +15,14 @@ export type ProxyHost = {
   lastAppliedAt?: string;
 };
 
-export type ProxyPayload = Omit<
-  ProxyHost,
-  "id" | "lastApplyStatus" | "lastApplyError" | "lastAppliedAt"
->;
+export type ProxyPayload = {
+  name: string;
+  serverName: string;
+  upstreamUrl: string;
+  certificateRootDomain: string;
+  enabled: boolean;
+  description: string;
+};
 
 export async function fetchProxyHosts() {
   const response = await client.get("/proxy");

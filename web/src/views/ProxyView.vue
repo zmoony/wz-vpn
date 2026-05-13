@@ -10,32 +10,41 @@ import {
   type ProxyHost,
   type ProxyPayload,
 } from "../api/proxy";
+import { fetchCertificates, type CertificateConfig } from "../api/certs";
 import PageHeader from "../components/PageHeader.vue";
 
 const loading = ref(false);
 const saving = ref(false);
 const editingId = ref<number | null>(null);
 const items = ref<ProxyHost[]>([]);
+const certificates = ref<CertificateConfig[]>([]);
 
 const form = reactive<ProxyPayload>({
   name: "",
   serverName: "",
   upstreamUrl: "http://127.0.0.1:3000",
-  certificateCertPath: "/opt/pi-gateway/data/certs/fullchain.pem",
-  certificateKeyPath: "/opt/pi-gateway/data/certs/privkey.pem",
+  certificateRootDomain: "",
   enabled: true,
   description: "",
 });
 
 const actionLabel = computed(() => (editingId.value ? "更新反代" : "新增反代"));
+const selectedCertificate = computed(() =>
+  certificates.value.find((item) => item.rootDomain === form.certificateRootDomain) ?? null,
+);
+const resolvedFullchainPath = computed(
+  () => selectedCertificate.value?.fullchainPath || (selectedCertificate.value ? `${selectedCertificate.value.installDir}/fullchain.pem` : ""),
+);
+const resolvedPrivateKeyPath = computed(
+  () => selectedCertificate.value?.privateKeyPath || (selectedCertificate.value ? `${selectedCertificate.value.installDir}/privkey.pem` : ""),
+);
 
 function resetForm() {
   editingId.value = null;
   form.name = "";
   form.serverName = "";
   form.upstreamUrl = "http://127.0.0.1:3000";
-  form.certificateCertPath = "/opt/pi-gateway/data/certs/fullchain.pem";
-  form.certificateKeyPath = "/opt/pi-gateway/data/certs/privkey.pem";
+  form.certificateRootDomain = certificates.value[0]?.rootDomain || "";
   form.enabled = true;
   form.description = "";
 }
@@ -43,8 +52,16 @@ function resetForm() {
 async function load() {
   loading.value = true;
   try {
-    const response = await fetchProxyHosts();
-    items.value = response.items;
+    const [proxyResponse, certResponse] = await Promise.all([fetchProxyHosts(), fetchCertificates()]);
+    items.value = Array.isArray(proxyResponse.items) ? proxyResponse.items : [];
+    certificates.value = Array.isArray(certResponse.items) ? certResponse.items : [];
+    if (
+      !editingId.value &&
+      (!form.certificateRootDomain ||
+        !certificates.value.some((item) => item.rootDomain === form.certificateRootDomain))
+    ) {
+      form.certificateRootDomain = certificates.value[0]?.rootDomain || "";
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "加载反代列表失败");
   } finally {
@@ -57,8 +74,7 @@ function startEdit(item: ProxyHost) {
   form.name = item.name;
   form.serverName = item.serverName;
   form.upstreamUrl = item.upstreamUrl;
-  form.certificateCertPath = item.certificateCertPath;
-  form.certificateKeyPath = item.certificateKeyPath;
+  form.certificateRootDomain = item.certificateRootDomain;
   form.enabled = item.enabled;
   form.description = item.description;
 }
@@ -66,11 +82,14 @@ function startEdit(item: ProxyHost) {
 async function submit() {
   saving.value = true;
   try {
+    const payload: ProxyPayload = {
+      ...form,
+    };
     if (editingId.value) {
-      await updateProxyHost(editingId.value, { ...form });
+      await updateProxyHost(editingId.value, payload);
       ElMessage.success("反向代理已更新");
     } else {
-      await createProxyHost({ ...form });
+      await createProxyHost(payload);
       ElMessage.success("反向代理已创建");
     }
     resetForm();
@@ -105,7 +124,7 @@ onMounted(load);
       <div class="page-card__body">
         <PageHeader
           title="反向代理"
-          description="这一轮已经把配置落库、nginx vhost 生成、nginx -t 校验和 reload 链路接起来了。"
+          description="证书现在由证书管理模块统一维护；这里直接选择根域名证书，路径会自动解析，续期后只要 reload nginx 就会吃到新证书。"
         >
           <el-button :loading="loading" @click="load">刷新列表</el-button>
         </PageHeader>
@@ -126,11 +145,39 @@ onMounted(load);
             <el-form-item label="后端地址">
               <el-input v-model="form.upstreamUrl" placeholder="http://127.0.0.1:3000" />
             </el-form-item>
+            <el-form-item label="证书根域名">
+              <el-select
+                v-model="form.certificateRootDomain"
+                placeholder="选择已申请的证书"
+                :disabled="certificates.length === 0"
+              >
+                <el-option
+                  v-for="item in certificates"
+                  :key="item.id"
+                  :label="item.rootDomain"
+                  :value="item.rootDomain"
+                />
+              </el-select>
+            </el-form-item>
+            <el-alert
+              v-if="certificates.length === 0"
+              type="warning"
+              :closable="false"
+              title="当前还没有可用证书，请先到证书管理里申请根域名证书。"
+            />
             <el-form-item label="证书路径">
-              <el-input v-model="form.certificateCertPath" placeholder="/path/to/fullchain.pem" />
+              <el-input
+                :model-value="resolvedFullchainPath"
+                readonly
+                placeholder="选择证书后自动显示 fullchain.pem"
+              />
             </el-form-item>
             <el-form-item label="私钥路径">
-              <el-input v-model="form.certificateKeyPath" placeholder="/path/to/privkey.pem" />
+              <el-input
+                :model-value="resolvedPrivateKeyPath"
+                readonly
+                placeholder="选择证书后自动显示 privkey.pem"
+              />
             </el-form-item>
             <el-form-item label="描述">
               <el-input v-model="form.description" type="textarea" :rows="3" placeholder="可选备注" />
@@ -139,7 +186,14 @@ onMounted(load);
               <el-switch v-model="form.enabled" active-text="启用后立即写入并 reload" />
             </el-form-item>
             <el-space>
-              <el-button type="primary" :loading="saving" @click="submit">{{ actionLabel }}</el-button>
+              <el-button
+                type="primary"
+                :loading="saving"
+                :disabled="certificates.length === 0"
+                @click="submit"
+              >
+                {{ actionLabel }}
+              </el-button>
               <el-button @click="resetForm">重置</el-button>
             </el-space>
           </el-form>
@@ -152,6 +206,12 @@ onMounted(load);
             <el-table-column prop="name" label="名称" width="140" />
             <el-table-column prop="serverName" label="域名" min-width="180" />
             <el-table-column prop="upstreamUrl" label="后端" min-width="180" />
+            <el-table-column prop="certificateRootDomain" label="证书" width="160" />
+            <el-table-column label="证书路径" min-width="220">
+              <template #default="{ row }">
+                {{ row.certificateCertPath || "-" }}
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="120">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? "启用" : "停用" }}</el-tag>

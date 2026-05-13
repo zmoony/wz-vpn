@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,22 +16,44 @@ import (
 var ErrProxyHostNotFound = errors.New("proxy host not found")
 
 type ProxyService struct {
-	Hosts   store.ProxyHostStore
-	Manager nginx.Manager
+	Hosts        store.ProxyHostStore
+	Certificates store.CertificateConfigStore
+	Manager      nginx.Manager
 }
 
 type UpsertProxyHostInput struct {
-	Name                string `json:"name"`
-	ServerName          string `json:"serverName"`
-	UpstreamURL         string `json:"upstreamUrl"`
-	CertificateCertPath string `json:"certificateCertPath"`
-	CertificateKeyPath  string `json:"certificateKeyPath"`
-	Enabled             bool   `json:"enabled"`
-	Description         string `json:"description"`
+	Name                  string `json:"name"`
+	ServerName            string `json:"serverName"`
+	UpstreamURL           string `json:"upstreamUrl"`
+	CertificateRootDomain string `json:"certificateRootDomain"`
+	Enabled               bool   `json:"enabled"`
+	Description           string `json:"description"`
 }
 
 func (s ProxyService) List(ctx context.Context) ([]domain.ProxyHost, error) {
-	return s.Hosts.List(ctx)
+	items, err := s.Hosts.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.Certificates == nil {
+		return items, nil
+	}
+	certs, err := s.Certificates.List(ctx)
+	if err != nil {
+		return items, nil
+	}
+	for i := range items {
+		if strings.TrimSpace(items[i].CertificateRootDomain) != "" {
+			continue
+		}
+		for _, cert := range certs {
+			if certMatchesHost(cert, items[i]) {
+				items[i].CertificateRootDomain = cert.RootDomain
+				break
+			}
+		}
+	}
+	return items, nil
 }
 
 func (s ProxyService) Create(ctx context.Context, input UpsertProxyHostInput) (*domain.ProxyHost, error) {
@@ -49,13 +72,15 @@ func (s ProxyService) Create(ctx context.Context, input UpsertProxyHostInput) (*
 	}
 
 	item := domain.ProxyHost{
-		Name:                strings.TrimSpace(input.Name),
-		ServerName:          strings.TrimSpace(input.ServerName),
-		UpstreamURL:         strings.TrimSpace(input.UpstreamURL),
-		CertificateCertPath: strings.TrimSpace(input.CertificateCertPath),
-		CertificateKeyPath:  strings.TrimSpace(input.CertificateKeyPath),
-		Enabled:             input.Enabled,
-		Description:         strings.TrimSpace(input.Description),
+		Name:                  strings.TrimSpace(input.Name),
+		ServerName:            strings.TrimSpace(input.ServerName),
+		UpstreamURL:           strings.TrimSpace(input.UpstreamURL),
+		CertificateRootDomain: strings.TrimSpace(input.CertificateRootDomain),
+		Enabled:               input.Enabled,
+		Description:           strings.TrimSpace(input.Description),
+	}
+	if err := s.resolveCertificate(ctx, &item); err != nil {
+		return nil, err
 	}
 	if err := s.Hosts.Create(ctx, &item); err != nil {
 		return nil, err
@@ -95,10 +120,12 @@ func (s ProxyService) Update(ctx context.Context, id int64, input UpsertProxyHos
 	item.Name = strings.TrimSpace(input.Name)
 	item.ServerName = strings.TrimSpace(input.ServerName)
 	item.UpstreamURL = strings.TrimSpace(input.UpstreamURL)
-	item.CertificateCertPath = strings.TrimSpace(input.CertificateCertPath)
-	item.CertificateKeyPath = strings.TrimSpace(input.CertificateKeyPath)
+	item.CertificateRootDomain = strings.TrimSpace(input.CertificateRootDomain)
 	item.Enabled = input.Enabled
 	item.Description = strings.TrimSpace(input.Description)
+	if err := s.resolveCertificate(ctx, item); err != nil {
+		return nil, err
+	}
 
 	s.apply(ctx, item)
 	if err := s.Hosts.Update(ctx, item); err != nil {
@@ -149,8 +176,8 @@ func validateProxyInput(input UpsertProxyHostInput) error {
 	if strings.TrimSpace(input.ServerName) == "" {
 		return errors.New("server name is required")
 	}
-	if strings.TrimSpace(input.CertificateCertPath) == "" || strings.TrimSpace(input.CertificateKeyPath) == "" {
-		return errors.New("certificate paths are required")
+	if strings.TrimSpace(input.CertificateRootDomain) == "" {
+		return errors.New("certificate root domain is required")
 	}
 	upstream := strings.TrimSpace(input.UpstreamURL)
 	if upstream == "" {
@@ -161,4 +188,42 @@ func validateProxyInput(input UpsertProxyHostInput) error {
 		return errors.New("upstream url must be a valid absolute URL")
 	}
 	return nil
+}
+
+func (s ProxyService) resolveCertificate(ctx context.Context, item *domain.ProxyHost) error {
+	if s.Certificates == nil {
+		return errors.New("certificate store is not configured")
+	}
+	cert, err := s.Certificates.FindByRootDomain(ctx, strings.TrimSpace(item.CertificateRootDomain))
+	if err != nil {
+		return err
+	}
+	if cert == nil {
+		return errors.New("selected certificate root domain does not exist")
+	}
+	item.CertificateRootDomain = cert.RootDomain
+	item.CertificateCertPath = resolvedCertificateFullchain(*cert)
+	item.CertificateKeyPath = resolvedCertificatePrivateKey(*cert)
+	return nil
+}
+
+func resolvedCertificateFullchain(cert domain.CertificateConfig) string {
+	if strings.TrimSpace(cert.FullchainPath) != "" {
+		return strings.TrimSpace(cert.FullchainPath)
+	}
+	return filepath.Join(strings.TrimSpace(cert.InstallDir), "fullchain.pem")
+}
+
+func resolvedCertificatePrivateKey(cert domain.CertificateConfig) string {
+	if strings.TrimSpace(cert.PrivateKeyPath) != "" {
+		return strings.TrimSpace(cert.PrivateKeyPath)
+	}
+	return filepath.Join(strings.TrimSpace(cert.InstallDir), "privkey.pem")
+}
+
+func certMatchesHost(cert domain.CertificateConfig, host domain.ProxyHost) bool {
+	fullchain := resolvedCertificateFullchain(cert)
+	privateKey := resolvedCertificatePrivateKey(cert)
+	return strings.EqualFold(strings.TrimSpace(host.CertificateCertPath), fullchain) &&
+		strings.EqualFold(strings.TrimSpace(host.CertificateKeyPath), privateKey)
 }

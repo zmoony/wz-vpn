@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -62,6 +63,7 @@ func migrate(db *sql.DB) error {
 			name text not null unique,
 			server_name text not null unique,
 			upstream_url text not null,
+			certificate_root_domain text not null default '',
 			certificate_cert_path text not null,
 			certificate_key_path text not null,
 			enabled integer not null default 1,
@@ -143,5 +145,40 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	if err := ensureColumn(db, "proxy_hosts", "certificate_root_domain", "text not null default ''"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureColumn(db *sql.DB, tableName, columnName, columnDef string) error {
+	rows, err := db.Query(`pragma table_info(` + tableName + `)`)
+	if err != nil {
+		return fmt.Errorf("inspect table %s: %w", tableName, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan table info %s: %w", tableName, err)
+		}
+		if strings.EqualFold(name, columnName) {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read table info %s: %w", tableName, err)
+	}
+
+	if _, err := db.Exec(`alter table ` + tableName + ` add column ` + columnName + ` ` + columnDef); err != nil {
+		return fmt.Errorf("add column %s.%s: %w", tableName, columnName, err)
+	}
 	return nil
 }

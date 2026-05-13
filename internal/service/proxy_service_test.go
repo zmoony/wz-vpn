@@ -70,6 +70,32 @@ type proxyManagerStub struct {
 	err     error
 }
 
+type proxyCertStoreStub struct {
+	items []domain.CertificateConfig
+}
+
+func (s *proxyCertStoreStub) List(context.Context) ([]domain.CertificateConfig, error) { return s.items, nil }
+func (s *proxyCertStoreStub) FindByID(_ context.Context, id int64) (*domain.CertificateConfig, error) {
+	for _, item := range s.items {
+		if item.ID == id {
+			copy := item
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+func (s *proxyCertStoreStub) FindByRootDomain(_ context.Context, rootDomain string) (*domain.CertificateConfig, error) {
+	for _, item := range s.items {
+		if item.RootDomain == rootDomain {
+			copy := item
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+func (s *proxyCertStoreStub) Create(context.Context, *domain.CertificateConfig) error { return nil }
+func (s *proxyCertStoreStub) Update(context.Context, *domain.CertificateConfig) error { return nil }
+
 func (s *proxyManagerStub) Apply(_ context.Context, host domain.ProxyHost) error {
 	s.applied = append(s.applied, host.ServerName)
 	return s.err
@@ -83,15 +109,20 @@ func (s *proxyManagerStub) Render(domain.ProxyHost) string { return "" }
 func TestProxyServiceCreateAppliesEnabledHost(t *testing.T) {
 	store := &proxyStoreStub{}
 	manager := &proxyManagerStub{}
-	service := ProxyService{Hosts: store, Manager: manager}
+	service := ProxyService{
+		Hosts: store,
+		Certificates: &proxyCertStoreStub{items: []domain.CertificateConfig{
+			{ID: 1, RootDomain: "example.com", FullchainPath: "/certs/fullchain.pem", PrivateKeyPath: "/certs/privkey.pem"},
+		}},
+		Manager: manager,
+	}
 
 	result, err := service.Create(context.Background(), UpsertProxyHostInput{
-		Name:                "blog",
-		ServerName:          "blog.example.com",
-		UpstreamURL:         "http://127.0.0.1:3000",
-		CertificateCertPath: "/certs/fullchain.pem",
-		CertificateKeyPath:  "/certs/privkey.pem",
-		Enabled:             true,
+		Name:                  "blog",
+		ServerName:            "blog.example.com",
+		UpstreamURL:           "http://127.0.0.1:3000",
+		CertificateRootDomain: "example.com",
+		Enabled:               true,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -102,6 +133,9 @@ func TestProxyServiceCreateAppliesEnabledHost(t *testing.T) {
 	if len(manager.applied) != 1 || manager.applied[0] != "blog.example.com" {
 		t.Fatalf("expected nginx apply call, got %#v", manager.applied)
 	}
+	if result.CertificateCertPath != "/certs/fullchain.pem" || result.CertificateKeyPath != "/certs/privkey.pem" {
+		t.Fatalf("expected resolved cert paths, got %#v", result)
+	}
 }
 
 func TestProxyServiceDeleteRemovesConfig(t *testing.T) {
@@ -109,7 +143,7 @@ func TestProxyServiceDeleteRemovesConfig(t *testing.T) {
 		items: []domain.ProxyHost{{ID: 1, ServerName: "blog.example.com"}},
 	}
 	manager := &proxyManagerStub{}
-	service := ProxyService{Hosts: store, Manager: manager}
+	service := ProxyService{Hosts: store, Certificates: &proxyCertStoreStub{}, Manager: manager}
 
 	if err := service.Delete(context.Background(), 1); err != nil {
 		t.Fatalf("Delete() error = %v", err)
@@ -122,20 +156,44 @@ func TestProxyServiceDeleteRemovesConfig(t *testing.T) {
 func TestProxyServiceSurfacesManagerFailure(t *testing.T) {
 	store := &proxyStoreStub{}
 	manager := &proxyManagerStub{err: errors.New("nginx -t failed")}
-	service := ProxyService{Hosts: store, Manager: manager}
+	service := ProxyService{
+		Hosts: store,
+		Certificates: &proxyCertStoreStub{items: []domain.CertificateConfig{
+			{ID: 1, RootDomain: "example.com", FullchainPath: "/certs/fullchain.pem", PrivateKeyPath: "/certs/privkey.pem"},
+		}},
+		Manager: manager,
+	}
 
 	result, err := service.Create(context.Background(), UpsertProxyHostInput{
-		Name:                "blog",
-		ServerName:          "blog.example.com",
-		UpstreamURL:         "http://127.0.0.1:3000",
-		CertificateCertPath: "/certs/fullchain.pem",
-		CertificateKeyPath:  "/certs/privkey.pem",
-		Enabled:             true,
+		Name:                  "blog",
+		ServerName:            "blog.example.com",
+		UpstreamURL:           "http://127.0.0.1:3000",
+		CertificateRootDomain: "example.com",
+		Enabled:               true,
 	})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 	if result == nil || result.LastApplyStatus != "error" {
 		t.Fatalf("expected result to record error status, got %#v", result)
+	}
+}
+
+func TestProxyServiceListInfersCertificateRootDomainFromPaths(t *testing.T) {
+	service := ProxyService{
+		Hosts: &proxyStoreStub{items: []domain.ProxyHost{
+			{ID: 1, ServerName: "blog.example.com", CertificateCertPath: "/certs/fullchain.pem", CertificateKeyPath: "/certs/privkey.pem"},
+		}},
+		Certificates: &proxyCertStoreStub{items: []domain.CertificateConfig{
+			{ID: 1, RootDomain: "example.com", FullchainPath: "/certs/fullchain.pem", PrivateKeyPath: "/certs/privkey.pem"},
+		}},
+	}
+
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 1 || items[0].CertificateRootDomain != "example.com" {
+		t.Fatalf("expected inferred certificate root domain, got %#v", items)
 	}
 }

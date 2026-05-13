@@ -8,8 +8,8 @@ import DDNSView from "../views/DDNSView.vue";
 import FirewallView from "../views/FirewallView.vue";
 import LoginView from "../views/LoginView.vue";
 import ProxyView from "../views/ProxyView.vue";
+import SettingsView from "../views/SettingsView.vue";
 import WireGuardView from "../views/WireGuardView.vue";
-import StubModuleView from "../views/StubModuleView.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -26,7 +26,7 @@ const router = createRouter({
         { path: "ddns", name: "ddns", component: DDNSView },
         { path: "certs", name: "certs", component: CertsView },
         { path: "firewall", name: "firewall", component: FirewallView },
-        { path: "settings", name: "settings", component: StubModuleView, props: { module: "系统设置" } },
+        { path: "settings", name: "settings", component: SettingsView },
       ],
     },
   ],

@@ -49,6 +49,8 @@ const legacyForwardConfig = reactive<FirewallForwardConfig>({
 const conntrackLoading = ref(false);
 const conntrackSourceIP = ref("");
 const conntrackItems = ref<ConntrackEntry[]>([]);
+const conntrackAvailable = ref(true);
+const conntrackMessage = ref("");
 
 const form = reactive<FirewallRulePayload>({
   name: "",
@@ -285,9 +287,13 @@ async function loadConntrack() {
   conntrackLoading.value = true;
   try {
     const response = await fetchConntrackEntries(conntrackSourceIP.value);
+    conntrackAvailable.value = response.available;
+    conntrackMessage.value = response.message;
     conntrackItems.value = response.items;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "加载当前连接失败");
+    conntrackAvailable.value = false;
+    conntrackItems.value = [];
+    conntrackMessage.value = error instanceof Error ? error.message : "加载当前连接失败";
   } finally {
     conntrackLoading.value = false;
   }
@@ -545,7 +551,14 @@ onMounted(async () => {
             <el-button :loading="conntrackLoading" @click="loadConntrack">刷新连接</el-button>
           </div>
         </PageHeader>
-        <el-table :data="conntrackItems">
+        <el-alert
+          v-if="!conntrackAvailable"
+          class="conntrack-alert"
+          type="warning"
+          :closable="false"
+          :title="conntrackMessage || '当前宿主机未提供 conntrack 命令，连接明细暂不可用。'"
+        />
+        <el-table v-else :data="conntrackItems">
           <el-table-column prop="protocol" label="协议" width="100" />
           <el-table-column prop="sourceIp" label="来源 IP" min-width="150" />
           <el-table-column prop="sourcePort" label="来源端口" width="110" />
@@ -594,6 +607,10 @@ onMounted(async () => {
 }
 
 .legacy-alert {
+  margin-top: 16px;
+}
+
+.conntrack-alert {
   margin-top: 16px;
 }
 
