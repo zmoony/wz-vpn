@@ -8,10 +8,13 @@ import {
   confirmFirewallRules,
   createFirewallRule,
   deleteFirewallRule,
+  fetchFirewallForwardConfig,
   fetchFirewallPendingState,
   fetchFirewallRules,
   previewFirewallRules,
   updateFirewallRule,
+  updateFirewallForwardConfig,
+  type FirewallForwardConfig,
   type FirewallPendingState,
   type FirewallRule,
   type FirewallRulePayload,
@@ -25,6 +28,12 @@ const editingId = ref<number | null>(null);
 const items = ref<FirewallRule[]>([]);
 const previewText = ref("");
 const pendingState = ref<FirewallPendingState | null>(null);
+const forwardSaving = ref(false);
+const forwardConfig = reactive<FirewallForwardConfig>({
+  enabled: false,
+  wgInterface: "wg0",
+  lanCidr: "",
+});
 
 const form = reactive<FirewallRulePayload>({
   name: "",
@@ -61,9 +70,16 @@ function resetForm() {
 async function load() {
   loading.value = true;
   try {
-    const [rules, pending] = await Promise.all([fetchFirewallRules(), fetchFirewallPendingState()]);
+    const [rules, pending, forward] = await Promise.all([
+      fetchFirewallRules(),
+      fetchFirewallPendingState(),
+      fetchFirewallForwardConfig(),
+    ]);
     items.value = rules.items;
     pendingState.value = pending.pendingState;
+    forwardConfig.enabled = forward.enabled;
+    forwardConfig.wgInterface = forward.wgInterface;
+    forwardConfig.lanCidr = forward.lanCidr;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "加载防火墙规则失败");
   } finally {
@@ -155,6 +171,25 @@ async function confirm() {
   }
 }
 
+async function saveForward() {
+  forwardSaving.value = true;
+  try {
+    const updated = await updateFirewallForwardConfig({
+      enabled: forwardConfig.enabled,
+      lanCidr: forwardConfig.lanCidr,
+    });
+    forwardConfig.enabled = updated.enabled;
+    forwardConfig.wgInterface = updated.wgInterface;
+    forwardConfig.lanCidr = updated.lanCidr;
+    ElMessage.success("forward 链配置已更新");
+    await preview();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "保存 forward 配置失败");
+  } finally {
+    forwardSaving.value = false;
+  }
+}
+
 onMounted(async () => {
   await load();
   await preview();
@@ -190,6 +225,24 @@ onMounted(async () => {
       <div class="page-card__body pending-banner">
         <strong>存在待确认的防火墙变更</strong>
         <span>如果 30 秒内不确认，系统会自动回滚到备份规则。</span>
+      </div>
+    </section>
+
+    <section class="page-card">
+      <div class="page-card__body">
+        <PageHeader
+          title="Forward 链"
+          description="这里先只支持一个固定场景：允许 WireGuard 接口访问单个家庭内网网段。"
+        >
+          <el-space>
+            <el-tag type="info">接口 {{ forwardConfig.wgInterface || "wg0" }}</el-tag>
+            <el-button type="primary" :loading="forwardSaving" @click="saveForward">保存 forward 配置</el-button>
+          </el-space>
+        </PageHeader>
+        <div class="forward-row">
+          <el-switch v-model="forwardConfig.enabled" active-text="启用 wg0 -> 内网放行" />
+          <el-input v-model="forwardConfig.lanCidr" placeholder="如 192.168.1.0/24" />
+        </div>
       </div>
     </section>
 
@@ -313,6 +366,13 @@ onMounted(async () => {
   background: #fff8e6;
 }
 
+.forward-row {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
 .range-row {
   display: flex;
   align-items: center;
@@ -332,6 +392,10 @@ onMounted(async () => {
 
 @media (max-width: 1200px) {
   .firewall-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .forward-row {
     grid-template-columns: 1fr;
   }
 }

@@ -114,3 +114,26 @@ func (h FirewallHandler) Pending(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"pendingState": state})
 }
+
+func (h FirewallHandler) GetForwardConfig(c *gin.Context) {
+	config, err := h.Service.GetForwardConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, config)
+}
+
+func (h FirewallHandler) UpdateForwardConfig(c *gin.Context) {
+	var request service.UpsertFirewallForwardInput
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	config, err := h.Service.UpdateForwardConfig(c.Request.Context(), request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, config)
+}

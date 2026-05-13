@@ -15,7 +15,7 @@ import (
 )
 
 type Manager interface {
-	RenderInputRules(rules []domain.FirewallRule) string
+	RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string
 	Apply(ctx context.Context, candidate string, rollbackText string, ttl time.Duration) (*domain.FirewallPendingState, error)
 	Confirm(ctx context.Context) error
 	Rollback(ctx context.Context) error
@@ -29,7 +29,7 @@ type SystemManager struct {
 	BackupsDir    string
 }
 
-func (m SystemManager) RenderInputRules(rules []domain.FirewallRule) string {
+func (m SystemManager) RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string {
 	lines := []string{
 		"table inet pi_gateway {",
 		"    chain input {",
@@ -49,6 +49,21 @@ func (m SystemManager) RenderInputRules(rules []domain.FirewallRule) string {
 		}
 	}
 
+	lines = append(lines,
+		"    }",
+		"",
+		"    chain forward {",
+		"        type filter hook forward priority 0;",
+		"        policy drop;",
+		"        ct state established,related accept",
+	)
+	if forward.Enabled && strings.TrimSpace(forward.WGInterface) != "" && strings.TrimSpace(forward.LanCIDR) != "" {
+		if strings.Contains(forward.LanCIDR, ":") {
+			lines = append(lines, fmt.Sprintf("        iifname \"%s\" ip6 daddr %s accept", forward.WGInterface, forward.LanCIDR))
+		} else {
+			lines = append(lines, fmt.Sprintf("        iifname \"%s\" ip daddr %s accept", forward.WGInterface, forward.LanCIDR))
+		}
+	}
 	lines = append(lines,
 		"    }",
 		"}",

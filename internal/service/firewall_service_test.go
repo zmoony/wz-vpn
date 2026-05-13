@@ -48,6 +48,22 @@ func (s *firewallStoreStub) Delete(_ context.Context, id int64) error {
 }
 func (s *firewallStoreStub) NextPriority(context.Context) (int, error) { return len(s.items) + 1, nil }
 
+type settingStoreStub struct {
+	values map[string]string
+}
+
+func (s *settingStoreStub) Get(_ context.Context, key string) (string, error) {
+	return s.values[key], nil
+}
+
+func (s *settingStoreStub) Set(_ context.Context, key string, value string) error {
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	s.values[key] = value
+	return nil
+}
+
 type nftManagerStub struct {
 	appliedText string
 	rollbackText string
@@ -57,11 +73,21 @@ type nftManagerStub struct {
 }
 
 func (s *nftManagerStub) RenderInputRules(rules []domain.FirewallRule) string {
+	panic("old method should not be called")
+}
+func (s *nftManagerStub) RenderRules(rules []domain.FirewallRule, forward domain.FirewallForwardConfig) string {
 	var names []string
 	for _, rule := range rules {
 		names = append(names, rule.Name)
 	}
-	return strings.Join(names, "\n")
+	text := strings.Join(names, "\n")
+	if forward.Enabled && forward.LanCIDR != "" {
+		if text != "" {
+			text += "\n"
+		}
+		text += "forward:" + forward.LanCIDR
+	}
+	return text
 }
 func (s *nftManagerStub) Apply(_ context.Context, candidate string, rollbackText string, ttl time.Duration) (*domain.FirewallPendingState, error) {
 	s.appliedText = candidate
@@ -91,7 +117,7 @@ func TestFirewallPreviewIncludesOrderedRules(t *testing.T) {
 		},
 	}
 	manager := &nftManagerStub{}
-	service := FirewallService{Rules: store, Manager: manager, PendingTTL: 30 * time.Second}
+	service := FirewallService{Rules: store, Settings: &settingStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
 
 	preview, err := service.Preview(context.Background())
 	if err != nil {
@@ -107,7 +133,11 @@ func TestFirewallApplyStartsPendingState(t *testing.T) {
 		items: []domain.FirewallRule{{Name: "ssh", Priority: 1, Enabled: true}},
 	}
 	manager := &nftManagerStub{}
-	service := FirewallService{Rules: store, Manager: manager, PendingTTL: 30 * time.Second}
+	settings := &settingStoreStub{values: map[string]string{
+		firewallForwardEnabledKey: "true",
+		firewallForwardCIDRKey:    "192.168.1.0/24",
+	}}
+	service := FirewallService{Rules: store, Settings: settings, Manager: manager, PendingTTL: 30 * time.Second, DefaultWGInterface: "wg0"}
 
 	state, candidate, err := service.Apply(context.Background())
 	if err != nil {
@@ -116,7 +146,7 @@ func TestFirewallApplyStartsPendingState(t *testing.T) {
 	if state == nil || !state.Pending {
 		t.Fatalf("expected pending state, got %#v", state)
 	}
-	if candidate != "ssh" {
+	if candidate != "ssh\nforward:192.168.1.0/24" {
 		t.Fatalf("expected rendered candidate, got %q", candidate)
 	}
 }
@@ -125,12 +155,28 @@ func TestFirewallConfirmClearsPendingState(t *testing.T) {
 	manager := &nftManagerStub{
 		state: &domain.FirewallPendingState{Pending: true},
 	}
-	service := FirewallService{Manager: manager, PendingTTL: 30 * time.Second}
+	service := FirewallService{Settings: &settingStoreStub{}, Manager: manager, PendingTTL: 30 * time.Second}
 
 	if err := service.Confirm(context.Background()); err != nil {
 		t.Fatalf("Confirm() error = %v", err)
 	}
 	if !manager.confirmed {
 		t.Fatalf("expected confirm to be called")
+	}
+}
+
+func TestFirewallUpdateForwardConfigStoresCIDR(t *testing.T) {
+	settings := &settingStoreStub{values: map[string]string{}}
+	service := FirewallService{Settings: settings, DefaultWGInterface: "wg0"}
+
+	config, err := service.UpdateForwardConfig(context.Background(), UpsertFirewallForwardInput{
+		Enabled: true,
+		LanCIDR: "192.168.1.0/24",
+	})
+	if err != nil {
+		t.Fatalf("UpdateForwardConfig() error = %v", err)
+	}
+	if !config.Enabled || config.LanCIDR != "192.168.1.0/24" || config.WGInterface != "wg0" {
+		t.Fatalf("unexpected config: %#v", config)
 	}
 }

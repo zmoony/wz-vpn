@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +21,10 @@ var (
 
 type FirewallService struct {
 	Rules        store.FirewallRuleStore
+	Settings     store.SettingStore
 	Manager      nftables.Manager
 	PendingTTL   time.Duration
+	DefaultWGInterface string
 
 	mu           sync.Mutex
 	pendingTimer *time.Timer
@@ -40,6 +43,16 @@ type UpsertFirewallRuleInput struct {
 	Priority       int    `json:"priority"`
 	Description    string `json:"description"`
 }
+
+type UpsertFirewallForwardInput struct {
+	Enabled bool   `json:"enabled"`
+	LanCIDR string `json:"lanCidr"`
+}
+
+const (
+	firewallForwardEnabledKey = "firewall.forward.enabled"
+	firewallForwardCIDRKey    = "firewall.forward.lan_cidr"
+)
 
 func (s *FirewallService) ResumePending(ctx context.Context) error {
 	state, err := s.Manager.LoadPendingState()
@@ -102,7 +115,11 @@ func (s *FirewallService) Preview(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.Manager.RenderInputRules(rules), nil
+	forward, err := s.GetForwardConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+	return s.Manager.RenderRules(rules, forward), nil
 }
 
 func (s *FirewallService) Apply(ctx context.Context) (*domain.FirewallPendingState, string, error) {
@@ -121,8 +138,12 @@ func (s *FirewallService) Apply(ctx context.Context) (*domain.FirewallPendingSta
 	if err != nil {
 		return nil, "", err
 	}
-	candidate := s.Manager.RenderInputRules(rules)
-	rollbackText := s.Manager.RenderInputRules(nil)
+	forward, err := s.GetForwardConfig(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	candidate := s.Manager.RenderRules(rules, forward)
+	rollbackText := s.Manager.RenderRules(nil, domain.FirewallForwardConfig{})
 	state, err = s.Manager.Apply(ctx, candidate, rollbackText, s.PendingTTL)
 	if err != nil {
 		return nil, candidate, err
@@ -144,6 +165,40 @@ func (s *FirewallService) Confirm(ctx context.Context) error {
 
 func (s *FirewallService) PendingState() (*domain.FirewallPendingState, error) {
 	return s.Manager.LoadPendingState()
+}
+
+func (s *FirewallService) GetForwardConfig(ctx context.Context) (domain.FirewallForwardConfig, error) {
+	enabledRaw, err := s.Settings.Get(ctx, firewallForwardEnabledKey)
+	if err != nil {
+		return domain.FirewallForwardConfig{}, err
+	}
+	lanCIDR, err := s.Settings.Get(ctx, firewallForwardCIDRKey)
+	if err != nil {
+		return domain.FirewallForwardConfig{}, err
+	}
+	return domain.FirewallForwardConfig{
+		Enabled:     strings.EqualFold(enabledRaw, "true"),
+		WGInterface: s.DefaultWGInterface,
+		LanCIDR:     strings.TrimSpace(lanCIDR),
+	}, nil
+}
+
+func (s *FirewallService) UpdateForwardConfig(ctx context.Context, input UpsertFirewallForwardInput) (domain.FirewallForwardConfig, error) {
+	if input.Enabled {
+		if strings.TrimSpace(input.LanCIDR) == "" {
+			return domain.FirewallForwardConfig{}, errors.New("lan cidr is required when forward is enabled")
+		}
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(input.LanCIDR)); err != nil {
+			return domain.FirewallForwardConfig{}, errors.New("lan cidr must be a valid CIDR")
+		}
+	}
+	if err := s.Settings.Set(ctx, firewallForwardEnabledKey, strings.ToLower(strconv.FormatBool(input.Enabled))); err != nil {
+		return domain.FirewallForwardConfig{}, err
+	}
+	if err := s.Settings.Set(ctx, firewallForwardCIDRKey, strings.TrimSpace(input.LanCIDR)); err != nil {
+		return domain.FirewallForwardConfig{}, err
+	}
+	return s.GetForwardConfig(ctx)
 }
 
 func (s *FirewallService) scheduleRollback(state *domain.FirewallPendingState) {

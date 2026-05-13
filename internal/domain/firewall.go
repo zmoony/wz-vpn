@@ -27,3 +27,9 @@ type FirewallPendingState struct {
 	AppliedAt     *time.Time `json:"appliedAt,omitempty"`
 	OriginalPath  string     `json:"originalPath"`
 }
+
+type FirewallForwardConfig struct {
+	Enabled    bool   `json:"enabled"`
+	WGInterface string `json:"wgInterface"`
+	LanCIDR    string `json:"lanCidr"`
+}

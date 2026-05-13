@@ -26,6 +26,12 @@ export type FirewallPendingState = {
   originalPath: string;
 };
 
+export type FirewallForwardConfig = {
+  enabled: boolean;
+  wgInterface: string;
+  lanCidr: string;
+};
+
 export async function fetchFirewallRules() {
   const response = await client.get("/firewall/rules");
   return response.data as { items: FirewallRule[] };
@@ -63,4 +69,14 @@ export async function confirmFirewallRules() {
 export async function fetchFirewallPendingState() {
   const response = await client.get("/firewall/pending");
   return response.data as { pendingState: FirewallPendingState | null };
+}
+
+export async function fetchFirewallForwardConfig() {
+  const response = await client.get("/firewall/forward");
+  return response.data as FirewallForwardConfig;
+}
+
+export async function updateFirewallForwardConfig(payload: { enabled: boolean; lanCidr: string }) {
+  const response = await client.put("/firewall/forward", payload);
+  return response.data as FirewallForwardConfig;
 }

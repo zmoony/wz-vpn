@@ -18,6 +18,7 @@
 - 已把前端 `Certs` 页面替换为真实页面，并接入申请、更新、强制续期接口。
 - 已新增防火墙真实后端能力：`firewall_rules` 落库、`input` 链规则渲染、规则预览、真实 apply、30 秒待确认状态、确认/自动回滚链路。
 - 已把前端 `Firewall` 页面替换为真实页面，并接入规则 CRUD、预览、应用、确认和 pending 状态查询接口。
+- 已为防火墙补充最小 `forward` 链能力：支持配置单个内网 CIDR，并与当前 `input + forward` 规则一起预览、应用、确认和回滚。
 
 # 下一步
 
@@ -26,4 +27,4 @@
 - 在真实 Linux + nginx / ddns-go 环境中联调 `PI_GATEWAY_NGINX_SITES_DIR`、`PI_GATEWAY_DDNSGO_*` 相关路径和 reload 命令。
 - 在真实 Linux + acme.sh / nginx 环境中联调 `PI_GATEWAY_ACME_SH_PATH`、证书安装目录、`nginx -s reload` 命令和阿里云 DNS-01 凭据。
 - 在真实 Linux + nftables 环境中联调 `PI_GATEWAY_NFTABLES_RULES_PATH`、待确认状态文件、备份目录、`nft -f` 应用和超时回滚链路。
-- 下一轮可继续补 `forward` 链、`conntrack` 查看、以及证书/防火墙的高级配置能力。
+- 下一轮可继续补 `conntrack` 查看、通用 forward 规则、以及证书/防火墙的高级配置能力。

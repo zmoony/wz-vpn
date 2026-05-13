@@ -114,9 +114,11 @@ func New() (*Application, error) {
 		DefaultInstallRoot: cfg.CertsInstallRoot,
 	}
 	firewallService := &service.FirewallService{
-		Rules:      firewallStore,
-		Manager:    nftManager,
-		PendingTTL: time.Duration(cfg.FirewallPendingSeconds) * time.Second,
+		Rules:              firewallStore,
+		Settings:           store.SQLiteSettingStore{DB: db},
+		Manager:            nftManager,
+		PendingTTL:         time.Duration(cfg.FirewallPendingSeconds) * time.Second,
+		DefaultWGInterface: cfg.WireGuardIface,
 	}
 	if err := firewallService.ResumePending(context.Background()); err != nil {
 		return nil, fmt.Errorf("resume firewall pending state: %w", err)

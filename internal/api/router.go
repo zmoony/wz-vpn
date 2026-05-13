@@ -80,6 +80,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			protected.POST("/firewall/apply", firewallHandler.Apply)
 			protected.POST("/firewall/confirm", firewallHandler.Confirm)
 			protected.GET("/firewall/pending", firewallHandler.Pending)
+			protected.GET("/firewall/forward", firewallHandler.GetForwardConfig)
+			protected.PUT("/firewall/forward", firewallHandler.UpdateForwardConfig)
 			protected.GET("/settings", moduleHandler.List("settings"))
 		}
 	}
