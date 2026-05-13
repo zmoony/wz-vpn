@@ -14,6 +14,7 @@ import (
 	"github.com/zmoony/pi-gateway/internal/config"
 	"github.com/zmoony/pi-gateway/internal/platform"
 	"github.com/zmoony/pi-gateway/internal/platform/acme"
+	"github.com/zmoony/pi-gateway/internal/platform/conntrack"
 	"github.com/zmoony/pi-gateway/internal/platform/ddnsgo"
 	"github.com/zmoony/pi-gateway/internal/platform/nginx"
 	"github.com/zmoony/pi-gateway/internal/platform/nftables"
@@ -84,6 +85,7 @@ func New() (*Application, error) {
 		StatePath:  cfg.FirewallStatePath,
 		BackupsDir: cfg.FirewallBackupsDir,
 	}
+	conntrackManager := conntrack.SystemManager{Runner: commandRunner}
 
 	systemService := service.SystemStatsService{
 		Collector: systemstats.StaticCollector{},
@@ -120,6 +122,9 @@ func New() (*Application, error) {
 		PendingTTL:         time.Duration(cfg.FirewallPendingSeconds) * time.Second,
 		DefaultWGInterface: cfg.WireGuardIface,
 	}
+	conntrackService := service.ConntrackService{
+		Manager: conntrackManager,
+	}
 	if err := firewallService.ResumePending(context.Background()); err != nil {
 		return nil, fmt.Errorf("resume firewall pending state: %w", err)
 	}
@@ -133,6 +138,7 @@ func New() (*Application, error) {
 		DDNSService:    ddnsService,
 		CertService:    certService,
 		FirewallService: firewallService,
+		ConntrackService: conntrackService,
 	})
 
 	server := &http.Server{

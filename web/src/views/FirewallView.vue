@@ -19,6 +19,7 @@ import {
   type FirewallRule,
   type FirewallRulePayload,
 } from "../api/firewall";
+import { fetchConntrackEntries, type ConntrackEntry } from "../api/conntrack";
 
 const loading = ref(false);
 const saving = ref(false);
@@ -29,6 +30,9 @@ const items = ref<FirewallRule[]>([]);
 const previewText = ref("");
 const pendingState = ref<FirewallPendingState | null>(null);
 const forwardSaving = ref(false);
+const conntrackLoading = ref(false);
+const conntrackSourceIP = ref("");
+const conntrackItems = ref<ConntrackEntry[]>([]);
 const forwardConfig = reactive<FirewallForwardConfig>({
   enabled: false,
   wgInterface: "wg0",
@@ -190,9 +194,22 @@ async function saveForward() {
   }
 }
 
+async function loadConntrack() {
+  conntrackLoading.value = true;
+  try {
+    const response = await fetchConntrackEntries(conntrackSourceIP.value);
+    conntrackItems.value = response.items;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "加载当前连接失败");
+  } finally {
+    conntrackLoading.value = false;
+  }
+}
+
 onMounted(async () => {
   await load();
   await preview();
+  await loadConntrack();
 });
 </script>
 
@@ -348,6 +365,28 @@ onMounted(async () => {
         </div>
       </article>
     </section>
+
+    <section class="page-card">
+      <div class="page-card__body">
+        <PageHeader
+          title="当前连接"
+          description="只读展示 conntrack 明细，可按来源 IP 过滤，方便看 WireGuard 客户端和来源访问情况。"
+        >
+          <div class="conntrack-toolbar">
+            <el-input v-model="conntrackSourceIP" placeholder="按来源 IP 过滤，例如 10.66.66.2" clearable />
+            <el-button :loading="conntrackLoading" @click="loadConntrack">刷新连接</el-button>
+          </div>
+        </PageHeader>
+        <el-table :data="conntrackItems">
+          <el-table-column prop="protocol" label="协议" width="100" />
+          <el-table-column prop="sourceIp" label="来源 IP" min-width="150" />
+          <el-table-column prop="sourcePort" label="来源端口" width="110" />
+          <el-table-column prop="destinationIp" label="目标 IP" min-width="150" />
+          <el-table-column prop="destinationPort" label="目标端口" width="110" />
+          <el-table-column prop="state" label="状态" width="140" />
+        </el-table>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -370,6 +409,13 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 16px;
+  align-items: center;
+}
+
+.conntrack-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) auto;
+  gap: 12px;
   align-items: center;
 }
 
@@ -396,6 +442,10 @@ onMounted(async () => {
   }
 
   .forward-row {
+    grid-template-columns: 1fr;
+  }
+
+  .conntrack-toolbar {
     grid-template-columns: 1fr;
   }
 }

@@ -11,6 +11,7 @@ import (
 
 type FirewallHandler struct {
 	Service *service.FirewallService
+	ConntrackService service.ConntrackService
 }
 
 func (h FirewallHandler) List(c *gin.Context) {
@@ -136,4 +137,14 @@ func (h FirewallHandler) UpdateForwardConfig(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, config)
+}
+
+func (h FirewallHandler) Conntrack(c *gin.Context) {
+	sourceIP := c.Query("source_ip")
+	items, err := h.ConntrackService.List(c.Request.Context(), sourceIP)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
