@@ -271,3 +271,47 @@ func TestFirewallCreateForwardRuleAssignsPriority(t *testing.T) {
 		t.Fatalf("unexpected item after create: %#v", item)
 	}
 }
+
+func TestFirewallEnsureDefaultInputRulesCreatesTemplatesWhenEmpty(t *testing.T) {
+	store := &firewallStoreStub{}
+	service := FirewallService{Rules: store}
+
+	initialized, items, err := service.EnsureDefaultInputRules(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureDefaultInputRules() error = %v", err)
+	}
+	if !initialized {
+		t.Fatalf("expected initialization to occur")
+	}
+	if len(items) != 4 {
+		t.Fatalf("expected 4 default rules, got %d", len(items))
+	}
+	gotTemplates := []string{items[0].TemplateKey, items[1].TemplateKey, items[2].TemplateKey, items[3].TemplateKey}
+	wantTemplates := []string{"ssh", "http", "https", "wireguard"}
+	for i := range wantTemplates {
+		if gotTemplates[i] != wantTemplates[i] {
+			t.Fatalf("expected template %q at index %d, got %#v", wantTemplates[i], i, gotTemplates)
+		}
+	}
+	if len(store.items) != 4 {
+		t.Fatalf("expected store to persist 4 rules, got %d", len(store.items))
+	}
+}
+
+func TestFirewallEnsureDefaultInputRulesKeepsExistingRules(t *testing.T) {
+	store := &firewallStoreStub{
+		items: []domain.FirewallRule{{ID: 1, Name: "custom-ssh", Kind: "template", TemplateKey: "ssh", Enabled: true, Priority: 1}},
+	}
+	service := FirewallService{Rules: store}
+
+	initialized, items, err := service.EnsureDefaultInputRules(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureDefaultInputRules() error = %v", err)
+	}
+	if initialized {
+		t.Fatalf("expected existing rules to skip initialization")
+	}
+	if len(items) != 1 || items[0].Name != "custom-ssh" {
+		t.Fatalf("expected original rules to remain intact, got %#v", items)
+	}
+}

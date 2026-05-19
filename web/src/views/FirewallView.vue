@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "../lib/element-plus";
 
 import PageHeader from "../components/PageHeader.vue";
 import { fetchConntrackEntries, type ConntrackEntry } from "../api/conntrack";
@@ -33,6 +33,7 @@ const applying = ref(false);
 const confirming = ref(false);
 const editingId = ref<number | null>(null);
 const items = ref<FirewallRule[]>([]);
+const defaultsInitialized = ref(false);
 const previewText = ref("");
 const pendingState = ref<FirewallPendingState | null>(null);
 
@@ -81,6 +82,11 @@ const actionLabel = computed(() => (editingId.value ? "更新 input 规则" : "�
 const isCustom = computed(() => form.kind === "custom");
 const forwardActionLabel = computed(() => (forwardEditingId.value ? "更新 forward 规则" : "新增 forward 规则"));
 const usesLegacyForwardFallback = computed(() => forwardItems.value.length === 0 && legacyForwardConfig.enabled);
+const summaryChips = computed(() => [
+  { label: "Input 规则", value: String(items.value.length) },
+  { label: "Forward 规则", value: String(forwardItems.value.length) },
+  { label: "待确认状态", value: pendingState.value?.pending ? "进行中" : "无" },
+]);
 
 function resetForm() {
   editingId.value = null;
@@ -119,6 +125,7 @@ async function load() {
       fetchFirewallForwardConfig(),
     ]);
     items.value = rules.items;
+    defaultsInitialized.value = rules.initialized;
     pendingState.value = pending.pendingState;
     forwardItems.value = forwardRules.items;
     legacyForwardConfig.enabled = legacyForward.enabled;
@@ -308,13 +315,13 @@ onMounted(async () => {
 
 <template>
   <div class="page-shell firewall-page">
-    <section class="page-card">
-      <div class="page-card__body">
+    <section class="page-card firewall-hero">
+      <div class="page-card__body firewall-hero__body">
         <PageHeader
           title="防火墙"
-          description="当前已支持 input 规则、独立 forward 规则，以及真实 apply、确认和 30 秒自动回滚。"
+          description="当前支持 input 规则、独立 forward 规则、规则预览、apply / 确认 / 自动回滚，以及当前连接查看。第一次进入时如果还没有基础规则，系统会先帮你建好一组安全起点。"
         >
-          <el-space>
+          <el-space wrap>
             <el-button :loading="loading" @click="load">刷新规则</el-button>
             <el-button @click="preview">预览</el-button>
             <el-button type="warning" :loading="applying" @click="apply">应用</el-button>
@@ -323,6 +330,24 @@ onMounted(async () => {
             </el-button>
           </el-space>
         </PageHeader>
+
+        <div class="firewall-hero__chips">
+          <div v-for="chip in summaryChips" :key="chip.label" class="surface-muted firewall-chip">
+            <span>{{ chip.label }}</span>
+            <strong>{{ chip.value }}</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="defaultsInitialized" class="page-card">
+      <div class="page-card__body">
+        <el-alert
+          type="success"
+          :closable="false"
+          title="已自动初始化基础防火墙规则"
+          description="系统已经写入 SSH、HTTP、HTTPS、WireGuard 四条基础模板规则。它们目前只存在于规则列表里，尚未自动下发；建议你先检查和预览，再决定是否点击“应用”。"
+        />
       </div>
     </section>
 
@@ -338,10 +363,9 @@ onMounted(async () => {
         <div class="page-card__body">
           <PageHeader
             title="Input 规则"
-            description="管理公网入站放行规则，适合 SSH、HTTP、HTTPS、WireGuard 等端口。"
+            description="公网入站规则适合管理 SSH、HTTP、HTTPS、WireGuard 等端口；模板规则用来快速起步，自定义规则处理更细的来源限制。"
           />
-          <h3>{{ actionLabel }}</h3>
-          <el-form label-position="top">
+          <el-form label-position="top" class="firewall-form">
             <el-form-item label="规则名称">
               <el-input v-model="form.name" placeholder="如 allow-ssh-office" />
             </el-form-item>
@@ -391,7 +415,7 @@ onMounted(async () => {
             <el-form-item>
               <el-switch v-model="form.enabled" active-text="启用这条规则" />
             </el-form-item>
-            <el-space>
+            <el-space wrap>
               <el-button type="primary" :loading="saving" @click="submit">{{ actionLabel }}</el-button>
               <el-button @click="resetForm">重置</el-button>
             </el-space>
@@ -401,6 +425,10 @@ onMounted(async () => {
 
       <article class="page-card">
         <div class="page-card__body">
+          <PageHeader
+            title="Input 列表"
+            description="基础模板和自定义规则都会在这里按优先级展示；高风险场景建议先限制来源 IP，再决定是否 apply。"
+          />
           <el-table :data="items">
             <el-table-column prop="priority" label="优先级" width="90" />
             <el-table-column prop="name" label="名称" min-width="160" />
@@ -431,6 +459,10 @@ onMounted(async () => {
               </template>
             </el-table-column>
           </el-table>
+          <el-empty
+            v-if="items.length === 0"
+            description="当前还没有 input 规则。页面首次加载时会自动补基础模板；如果这里仍为空，请刷新或检查后端日志。"
+          />
         </div>
       </article>
     </section>
@@ -440,10 +472,9 @@ onMounted(async () => {
         <div class="page-card__body">
           <PageHeader
             title="Forward 规则"
-            description="独立管理 WireGuard 到内网的转发放行规则，优先服务 VPN 客户端访问家庭网络。"
+            description="优先服务 WireGuard 到内网的转发放行场景。先定义来源与目标网段，再细化到协议和目标端口。"
           />
-          <h3>{{ forwardActionLabel }}</h3>
-          <el-form label-position="top">
+          <el-form label-position="top" class="firewall-form">
             <el-form-item label="规则名称">
               <el-input v-model="forwardForm.name" placeholder="如 wg-lan-https" />
             </el-form-item>
@@ -472,7 +503,7 @@ onMounted(async () => {
             <el-form-item>
               <el-switch v-model="forwardForm.enabled" active-text="启用这条规则" />
             </el-form-item>
-            <el-space>
+            <el-space wrap>
               <el-button type="primary" :loading="forwardSaving" @click="submitForward">{{ forwardActionLabel }}</el-button>
               <el-button @click="resetForwardForm">重置</el-button>
             </el-space>
@@ -482,6 +513,10 @@ onMounted(async () => {
 
       <article class="page-card">
         <div class="page-card__body">
+          <PageHeader
+            title="Forward 列表"
+            description="如果你已经建立独立 forward 规则，系统会优先使用这里的显式规则，而不是旧的单网段兼容配置。"
+          />
           <el-table :data="forwardItems">
             <el-table-column prop="priority" label="优先级" width="90" />
             <el-table-column prop="name" label="名称" min-width="160" />
@@ -519,7 +554,7 @@ onMounted(async () => {
       <div class="page-card__body">
         <PageHeader
           title="兼容 Forward 配置"
-          description="保留旧的单网段兼容配置；仅当你还没有创建独立 forward 规则时，才会参与最终渲染。"
+          description="保留旧的单网段兼容配置；只有在你还没有创建独立 forward 规则时，它才会参与最终渲染。"
         >
           <el-space>
             <el-tag type="info">接口 {{ legacyForwardConfig.wgInterface || "wg0" }}</el-tag>
@@ -533,49 +568,80 @@ onMounted(async () => {
       </div>
     </section>
 
-    <section class="page-card">
-      <div class="page-card__body">
-        <h3>规则预览</h3>
-        <pre class="preview">{{ previewText || "点击“预览”查看最终 nftables 规则文本。" }}</pre>
-      </div>
-    </section>
+    <section class="firewall-preview-grid">
+      <article class="page-card">
+        <div class="page-card__body">
+          <h3 class="section-title">规则预览</h3>
+          <p class="section-subtitle">这是最终会写入 nftables 的规则文本，建议每次 apply 前先快速浏览一次。</p>
+          <pre class="preview">{{ previewText || "点击“预览”查看最终 nftables 规则文本。" }}</pre>
+        </div>
+      </article>
 
-    <section class="page-card">
-      <div class="page-card__body">
-        <PageHeader
-          title="当前连接"
-          description="只读展示 conntrack 明细，可按来源 IP 过滤，方便看 WireGuard 客户端和来源访问情况。"
-        >
-          <div class="conntrack-toolbar">
-            <el-input v-model="conntrackSourceIP" placeholder="按来源 IP 过滤，例如 10.66.66.2" clearable />
-            <el-button :loading="conntrackLoading" @click="loadConntrack">刷新连接</el-button>
-          </div>
-        </PageHeader>
-        <el-alert
-          v-if="!conntrackAvailable"
-          class="conntrack-alert"
-          type="warning"
-          :closable="false"
-          :title="conntrackMessage || '当前宿主机未提供 conntrack 命令，连接明细暂不可用。'"
-        />
-        <el-table v-else :data="conntrackItems">
-          <el-table-column prop="protocol" label="协议" width="100" />
-          <el-table-column prop="sourceIp" label="来源 IP" min-width="150" />
-          <el-table-column prop="sourcePort" label="来源端口" width="110" />
-          <el-table-column prop="destinationIp" label="目标 IP" min-width="150" />
-          <el-table-column prop="destinationPort" label="目标端口" width="110" />
-          <el-table-column prop="state" label="状态" width="140" />
-        </el-table>
-      </div>
+      <article class="page-card">
+        <div class="page-card__body">
+          <PageHeader
+            title="当前连接"
+            description="只读展示 conntrack 明细，可按来源 IP 过滤，便于判断 WireGuard 客户端和其它来源访问是否符合预期。"
+          >
+            <div class="conntrack-toolbar">
+              <el-input v-model="conntrackSourceIP" placeholder="按来源 IP 过滤，例如 10.66.66.2" clearable />
+              <el-button :loading="conntrackLoading" @click="loadConntrack">刷新连接</el-button>
+            </div>
+          </PageHeader>
+          <el-alert
+            v-if="!conntrackAvailable"
+            class="conntrack-alert"
+            type="warning"
+            :closable="false"
+            :title="conntrackMessage || '当前宿主机未提供 conntrack 命令，连接明细暂不可用。'"
+          />
+          <el-table v-else :data="conntrackItems">
+            <el-table-column prop="protocol" label="协议" width="100" />
+            <el-table-column prop="sourceIp" label="来源 IP" min-width="150" />
+            <el-table-column prop="sourcePort" label="来源端口" width="110" />
+            <el-table-column prop="destinationIp" label="目标 IP" min-width="150" />
+            <el-table-column prop="destinationPort" label="目标端口" width="110" />
+            <el-table-column prop="state" label="状态" width="140" />
+          </el-table>
+        </div>
+      </article>
     </section>
   </div>
 </template>
 
 <style scoped>
-.firewall-grid {
-  display: grid;
-  grid-template-columns: 380px 1fr;
+.firewall-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgba(245, 184, 65, 0.2), transparent 20%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 249, 0.97));
+}
+
+.firewall-hero__body {
+  display: flex;
+  flex-direction: column;
   gap: 20px;
+}
+
+.firewall-hero__chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.firewall-chip {
+  padding: 16px 18px;
+}
+
+.firewall-chip span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.firewall-chip strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 24px;
 }
 
 .pending-banner {
@@ -586,11 +652,28 @@ onMounted(async () => {
   background: #fff8e6;
 }
 
+.firewall-grid {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 20px;
+}
+
+.firewall-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 20px;
+}
+
+.firewall-form {
+  margin-top: 18px;
+}
+
 .forward-row {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 360px 1fr;
   gap: 16px;
   align-items: center;
+  margin-top: 18px;
 }
 
 .conntrack-toolbar {
@@ -606,34 +689,36 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.legacy-alert {
-  margin-top: 16px;
-}
-
+.legacy-alert,
 .conntrack-alert {
   margin-top: 16px;
 }
 
 .preview {
-  margin: 0;
-  min-height: 240px;
-  padding: 16px;
+  margin: 18px 0 0;
+  min-height: 320px;
+  padding: 18px;
   overflow: auto;
   white-space: pre-wrap;
-  border-radius: 14px;
-  background: #0f172a;
-  color: #edf5ff;
+  border: 1px solid rgba(22, 152, 142, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #13312f 0%, #0c201f 100%);
+  color: #eef7f5;
 }
 
-@media (max-width: 1200px) {
-  .firewall-grid {
+@media (max-width: 1180px) {
+  .firewall-grid,
+  .firewall-preview-grid,
+  .firewall-hero__chips {
     grid-template-columns: 1fr;
   }
 
   .forward-row {
     grid-template-columns: 1fr;
   }
+}
 
+@media (max-width: 720px) {
   .conntrack-toolbar {
     grid-template-columns: 1fr;
   }

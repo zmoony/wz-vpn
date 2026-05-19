@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage } from "../lib/element-plus";
 
 import PageHeader from "../components/PageHeader.vue";
 import {
@@ -28,6 +28,7 @@ const form = reactive<CertificatePayload>({
 });
 
 const actionLabel = computed(() => (editingId.value ? "更新证书配置" : "申请证书"));
+const issuedCount = computed(() => items.value.filter((item) => item.lastIssueStatus === "issued" || item.lastIssueStatus === "renewed").length);
 
 function resetForm() {
   editingId.value = null;
@@ -98,22 +99,40 @@ onMounted(load);
 
 <template>
   <div class="page-shell certs-page">
-    <section class="page-card">
-      <div class="page-card__body">
+    <section class="page-card certs-hero">
+      <div class="page-card__body certs-hero__body">
         <PageHeader
           title="证书管理"
-          description="这轮先支持单个根域名的泛域名证书，也就是 *.example.com + example.com 的主路径。"
+          description="当前主路径是单个根域名的泛域名证书，也就是 *.example.com + example.com。你可以在这里统一维护签发参数、安装目录和续期状态。"
         >
           <el-button :loading="loading" @click="load">刷新列表</el-button>
         </PageHeader>
+
+        <div class="certs-summary">
+          <div class="surface-muted certs-summary__item">
+            <span>证书总数</span>
+            <strong>{{ items.length }}</strong>
+          </div>
+          <div class="surface-muted certs-summary__item">
+            <span>已签发 / 已续期</span>
+            <strong>{{ issuedCount }}</strong>
+          </div>
+          <div class="surface-muted certs-summary__item">
+            <span>自动续期标记</span>
+            <strong>{{ items.filter((item) => item.enabledAutoRenew).length }}</strong>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="certs-grid">
       <article class="page-card">
         <div class="page-card__body">
-          <h3>{{ actionLabel }}</h3>
-          <el-form label-position="top">
+          <PageHeader
+            :title="actionLabel"
+            description="签发参数建议统一管理在这里，反向代理页只负责引用根域名证书，不再直接维护文件路径。"
+          />
+          <el-form label-position="top" class="certs-form">
             <el-form-item label="根域名">
               <el-input v-model="form.rootDomain" placeholder="example.com" />
             </el-form-item>
@@ -132,7 +151,7 @@ onMounted(load);
             <el-form-item>
               <el-switch v-model="form.enabledAutoRenew" active-text="启用自动续期标记" />
             </el-form-item>
-            <el-space>
+            <el-space wrap>
               <el-button type="primary" :loading="saving" @click="submit">{{ actionLabel }}</el-button>
               <el-button @click="resetForm">重置</el-button>
             </el-space>
@@ -142,6 +161,10 @@ onMounted(load);
 
       <article class="page-card">
         <div class="page-card__body">
+          <PageHeader
+            title="证书列表"
+            description="重点看剩余天数、最近结果和证书安装路径。若续期异常，优先结合错误信息和证书目录排查 DNS-01 与安装链路。"
+          />
           <el-table :data="items">
             <el-table-column prop="rootDomain" label="根域名" min-width="160" />
             <el-table-column prop="provider" label="Provider" width="100" />
@@ -193,14 +216,53 @@ onMounted(load);
 </template>
 
 <style scoped>
+.certs-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgba(245, 184, 65, 0.18), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 248, 244, 0.97));
+}
+
+.certs-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.certs-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.certs-summary__item {
+  padding: 16px 18px;
+}
+
+.certs-summary__item span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.certs-summary__item strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+}
+
 .certs-grid {
   display: grid;
   grid-template-columns: 380px 1fr;
   gap: 20px;
 }
 
+.certs-form {
+  margin-top: 18px;
+}
+
 @media (max-width: 1200px) {
-  .certs-grid {
+  .certs-grid,
+  .certs-summary {
     grid-template-columns: 1fr;
   }
 }

@@ -43,3 +43,27 @@
   - `ProxyService` 现在会校验证书根域名是否存在，并从证书配置解析 `fullchain.pem` / `privkey.pem` 路径后再生成 nginx vhost。
   - 前端反向代理页改为下拉选择证书根域名，只读展示解析出的证书和私钥路径；没有可用证书时禁止提交并提示先去证书管理申请。
   - 验证已通过：`go test ./...`、`go build -o pi-gateway.exe ./cmd/pi-gateway`、`npm run build`。
+- 2026-05-19：防火墙页已补“首次进入自动初始化基础 input 规则”的闭环。
+  - 后端 `FirewallService` 新增 `EnsureDefaultInputRules`：当数据库里没有任何 input 规则时，自动写入 SSH / HTTP / HTTPS / WireGuard 四条模板规则。
+  - `GET /api/firewall/rules` 现在会返回 `initialized` 标记，前端据此提示“已自动初始化基础规则，但尚未 apply”。
+  - 前端防火墙页新增初始化成功提示，并在极端情况下继续提供空状态说明。
+  - 验证已通过：`go test ./internal/service/...`、`go test ./...`、`go build -o pi-gateway.exe ./cmd/pi-gateway`、`npm run build`。
+- 2026-05-19：前端视觉系统已按“桂林山水自然调性”完成首轮统一。
+  - 新的全局 `styles.css` 已统一色彩、圆角、阴影、字体、按钮、输入框、表格、Tag 和 Alert 风格，并覆盖 Element Plus 常用控件。
+  - `[AppLayout.vue]`、`[LoginView.vue]`、`[DashboardView.vue]`、`[FirewallView.vue]`、`[SettingsView.vue]` 已重做视觉层级，保留原有后台结构和业务数据流。
+  - `[PageHeader.vue]` 和 `[StatCard.vue]` 已调整为新的设计系统语言，方便其它页面继续复用。
+  - 验证已通过：`npm run build`。
+- 2026-05-19：第二波前端页面优化已完成，`WireGuard / 反向代理 / DDNS / 证书` 已全部切入统一设计语言。
+  - 四个页面都新增了首页式摘要区、分区化表单/列表组织、空状态或运行状态说明，并保留原有 API 与业务逻辑不变。
+  - `WireGuard` 页强化了 Peer 摘要和首次创建引导；`反向代理` 页强化了证书引用关系和结果提示；`DDNS` 页强化了运行状态可读性；`证书` 页强化了签发/续期状态表达。
+  - 验证已通过：`npm run build`。
+- 2026-05-19：前端性能优化已完成第一轮拆包。
+  - 路由页已全部改为懒加载，`WireGuard` 内的 `PeerFormDialog / PeerQrDialog` 也已改为按需异步加载。
+  - `vite.config.ts` 已增加 `manualChunks`，将 `vue-core / vendor / element-plus` 拆分，并让各页面与对话框输出独立 chunk。
+  - 构建结果已不再是单个首页业务包承载全部页面代码；各视图与对话框均单独产出资源文件。
+  - 验证已通过：`npm run build`。
+- 2026-05-19：`Element Plus` 已完成第二轮按需引入优化。
+  - `main.ts` 已从整包 `app.use(ElementPlus)` 改为手动注册实际使用的组件，并只引入对应样式文件。
+  - 新增 `[web/src/lib/element-plus.ts]`，将 `ElMessage / ElMessageBox` 收口到 `es/components/...` 细粒度入口，避免页面继续从包根导入。
+  - 构建结果中 `element-plus` JS chunk 已由约 `794kB` 降到约 `260kB`，CSS chunk 维持在约 `119kB`。
+  - 验证已通过：`npm run build`。

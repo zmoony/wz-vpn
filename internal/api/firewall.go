@@ -17,12 +17,12 @@ type FirewallHandler struct {
 }
 
 func (h FirewallHandler) List(c *gin.Context) {
-	items, err := h.Service.List(c.Request.Context())
+	initialized, items, err := h.Service.EnsureDefaultInputRules(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	c.JSON(http.StatusOK, gin.H{"items": items, "initialized": initialized})
 }
 
 func (h FirewallHandler) Create(c *gin.Context) {

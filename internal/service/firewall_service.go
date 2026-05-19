@@ -82,6 +82,34 @@ func (s *FirewallService) List(ctx context.Context) ([]domain.FirewallRule, erro
 	return s.Rules.List(ctx)
 }
 
+func (s *FirewallService) EnsureDefaultInputRules(ctx context.Context) (bool, []domain.FirewallRule, error) {
+	items, err := s.Rules.List(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	if len(items) > 0 {
+		return false, items, nil
+	}
+
+	defaults := []UpsertFirewallRuleInput{
+		{Name: "allow-ssh", Kind: "template", TemplateKey: "ssh", Enabled: true, Priority: 1, Description: "默认 SSH 放行模板"},
+		{Name: "allow-http", Kind: "template", TemplateKey: "http", Enabled: true, Priority: 2, Description: "默认 HTTP 放行模板"},
+		{Name: "allow-https", Kind: "template", TemplateKey: "https", Enabled: true, Priority: 3, Description: "默认 HTTPS 放行模板"},
+		{Name: "allow-wireguard", Kind: "template", TemplateKey: "wireguard", Enabled: true, Priority: 4, Description: "默认 WireGuard 放行模板"},
+	}
+	for _, input := range defaults {
+		if _, err := s.Create(ctx, input); err != nil {
+			return false, nil, err
+		}
+	}
+
+	items, err = s.Rules.List(ctx)
+	if err != nil {
+		return false, nil, err
+	}
+	return true, items, nil
+}
+
 func (s *FirewallService) Create(ctx context.Context, input UpsertFirewallRuleInput) (*domain.FirewallRule, error) {
 	item, err := s.buildRule(ctx, input, nil)
 	if err != nil {

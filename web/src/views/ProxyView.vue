@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "../lib/element-plus";
 
 import {
   createProxyHost,
@@ -29,6 +29,7 @@ const form = reactive<ProxyPayload>({
 });
 
 const actionLabel = computed(() => (editingId.value ? "更新反代" : "新增反代"));
+const enabledCount = computed(() => items.value.filter((item) => item.enabled).length);
 const selectedCertificate = computed(() =>
   certificates.value.find((item) => item.rootDomain === form.certificateRootDomain) ?? null,
 );
@@ -120,22 +121,40 @@ onMounted(load);
 
 <template>
   <div class="page-shell proxy-page">
-    <section class="page-card">
-      <div class="page-card__body">
+    <section class="page-card proxy-hero">
+      <div class="page-card__body proxy-hero__body">
         <PageHeader
           title="反向代理"
-          description="证书现在由证书管理模块统一维护；这里直接选择根域名证书，路径会自动解析，续期后只要 reload nginx 就会吃到新证书。"
+          description="证书现在由证书管理统一维护；这里按根域名引用证书，路径自动解析，续期成功后只要 reload nginx 就会吃到新证书。"
         >
           <el-button :loading="loading" @click="load">刷新列表</el-button>
         </PageHeader>
+
+        <div class="proxy-summary">
+          <div class="surface-muted proxy-summary__item">
+            <span>反代总数</span>
+            <strong>{{ items.length }}</strong>
+          </div>
+          <div class="surface-muted proxy-summary__item">
+            <span>启用中</span>
+            <strong>{{ enabledCount }}</strong>
+          </div>
+          <div class="surface-muted proxy-summary__item">
+            <span>可用证书</span>
+            <strong>{{ certificates.length }}</strong>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="proxy-grid">
       <article class="page-card">
         <div class="page-card__body">
-          <h3>{{ actionLabel }}</h3>
-          <el-form label-position="top">
+          <PageHeader
+            :title="actionLabel"
+            description="优先填好子域名、后端地址和证书根域名。证书路径只读展示，避免你在反代页手工维护证书文件路径。"
+          />
+          <el-form label-position="top" class="proxy-form">
             <el-form-item label="名称">
               <el-input v-model="form.name" placeholder="如 blog" />
             </el-form-item>
@@ -185,7 +204,7 @@ onMounted(load);
             <el-form-item>
               <el-switch v-model="form.enabled" active-text="启用后立即写入并 reload" />
             </el-form-item>
-            <el-space>
+            <el-space wrap>
               <el-button
                 type="primary"
                 :loading="saving"
@@ -202,6 +221,10 @@ onMounted(load);
 
       <article class="page-card">
         <div class="page-card__body">
+          <PageHeader
+            title="反代列表"
+            description="重点关注最近应用结果和错误信息。证书管理统一之后，如果证书路径发生异常，优先去证书页排查。"
+          />
           <el-table :data="items">
             <el-table-column prop="name" label="名称" width="140" />
             <el-table-column prop="serverName" label="域名" min-width="180" />
@@ -245,14 +268,53 @@ onMounted(load);
 </template>
 
 <style scoped>
+.proxy-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgba(22, 152, 142, 0.16), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 249, 246, 0.97));
+}
+
+.proxy-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.proxy-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.proxy-summary__item {
+  padding: 16px 18px;
+}
+
+.proxy-summary__item span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.proxy-summary__item strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+}
+
 .proxy-grid {
   display: grid;
   grid-template-columns: 420px 1fr;
   gap: 20px;
 }
 
+.proxy-form {
+  margin-top: 18px;
+}
+
 @media (max-width: 1200px) {
-  .proxy-grid {
+  .proxy-grid,
+  .proxy-summary {
     grid-template-columns: 1fr;
   }
 }

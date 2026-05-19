@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage } from "../lib/element-plus";
 
 import {
   createDDNSConfig,
@@ -31,6 +31,7 @@ const form = reactive<DDNSPayload>({
 });
 
 const actionLabel = computed(() => (editingId.value ? "更新 DDNS 配置" : "新增 DDNS 配置"));
+const enabledCount = computed(() => items.value.filter((item) => item.enabled).length);
 
 function resetForm() {
   editingId.value = null;
@@ -104,25 +105,43 @@ onMounted(load);
 
 <template>
   <div class="page-shell ddns-page">
-    <section class="page-card">
-      <div class="page-card__body">
+    <section class="page-card ddns-hero">
+      <div class="page-card__body ddns-hero__body">
         <PageHeader
           title="DDNS"
-          description="这轮把 DDNS 配置落库、受管配置文件写入、状态读取和 reload/sync 入口补上了。"
+          description="这轮已经把配置落库、受管配置文件写入、状态读取和 reload / sync 入口补上。这里适合统一维护公网域名到家庭网络的动态解析。"
         >
-          <el-space>
+          <el-space wrap>
             <el-button :loading="loading" @click="load">刷新状态</el-button>
             <el-button type="primary" :loading="syncing" @click="syncNow">立即同步</el-button>
           </el-space>
         </PageHeader>
+
+        <div class="ddns-summary">
+          <div class="surface-muted ddns-summary__item">
+            <span>记录总数</span>
+            <strong>{{ items.length }}</strong>
+          </div>
+          <div class="surface-muted ddns-summary__item">
+            <span>启用中</span>
+            <strong>{{ enabledCount }}</strong>
+          </div>
+          <div class="surface-muted ddns-summary__item">
+            <span>最近状态</span>
+            <strong>{{ runtimeStatus?.lastStatus || "unknown" }}</strong>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="ddns-grid">
       <article class="page-card">
         <div class="page-card__body">
-          <h3>{{ actionLabel }}</h3>
-          <el-form label-position="top">
+          <PageHeader
+            :title="actionLabel"
+            description="当前主路径仍然是阿里云风格的动态解析。更新已有配置时，Secret 不会回显，需要重新输入或保持后端原值。"
+          />
+          <el-form label-position="top" class="ddns-form">
             <el-form-item label="Provider">
               <el-input v-model="form.provider" placeholder="aliyun" />
             </el-form-item>
@@ -144,7 +163,7 @@ onMounted(load);
             <el-form-item>
               <el-switch v-model="form.enabled" active-text="启用该 DDNS 记录" />
             </el-form-item>
-            <el-space>
+            <el-space wrap>
               <el-button type="primary" :loading="saving" @click="submit">{{ actionLabel }}</el-button>
               <el-button @click="resetForm">重置</el-button>
             </el-space>
@@ -154,29 +173,30 @@ onMounted(load);
 
       <article class="page-card">
         <div class="page-card__body">
-          <h3>运行状态</h3>
+          <PageHeader
+            title="运行状态"
+            description="重点看最近状态、当前 IP 和最后同步时间；如果状态异常，优先结合错误信息判断是凭据、网络还是外部 provider 问题。"
+          />
           <div class="status-grid">
-            <div class="status-item">
+            <div class="surface-muted status-item">
               <small>最近状态</small>
               <strong>{{ runtimeStatus?.lastStatus || "unknown" }}</strong>
             </div>
-            <div class="status-item">
+            <div class="surface-muted status-item">
               <small>当前 IPv6</small>
               <strong>{{ runtimeStatus?.lastKnownIpv6 || "-" }}</strong>
             </div>
-            <div class="status-item">
+            <div class="surface-muted status-item">
               <small>最后同步</small>
               <strong>{{ runtimeStatus?.lastSyncedAt || "-" }}</strong>
             </div>
-            <div class="status-item">
+            <div class="surface-muted status-item">
               <small>错误</small>
               <strong>{{ runtimeStatus?.lastError || "-" }}</strong>
             </div>
           </div>
 
-          <el-divider />
-
-          <el-table :data="items">
+          <el-table :data="items" class="ddns-table">
             <el-table-column prop="provider" label="Provider" width="100" />
             <el-table-column label="记录" min-width="180">
               <template #default="{ row }">
@@ -204,27 +224,64 @@ onMounted(load);
 </template>
 
 <style scoped>
+.ddns-hero {
+  background:
+    radial-gradient(circle at 88% 10%, rgba(245, 184, 65, 0.18), transparent 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 250, 246, 0.97));
+}
+
+.ddns-hero__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ddns-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ddns-summary__item {
+  padding: 16px 18px;
+}
+
+.ddns-summary__item span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ddns-summary__item strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+  word-break: break-word;
+}
+
 .ddns-grid {
   display: grid;
   grid-template-columns: 380px 1fr;
   gap: 20px;
 }
 
+.ddns-form {
+  margin-top: 18px;
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  margin-top: 18px;
 }
 
 .status-item {
   padding: 16px;
-  border-radius: 14px;
-  background: #f8fbff;
-  border: 1px solid var(--line);
 }
 
 .status-item small {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .status-item strong {
@@ -233,8 +290,14 @@ onMounted(load);
   word-break: break-all;
 }
 
+.ddns-table {
+  margin-top: 18px;
+}
+
 @media (max-width: 1200px) {
-  .ddns-grid {
+  .ddns-grid,
+  .ddns-summary,
+  .status-grid {
     grid-template-columns: 1fr;
   }
 }

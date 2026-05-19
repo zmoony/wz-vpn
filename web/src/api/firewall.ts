@@ -48,7 +48,7 @@ export type FirewallForwardRulePayload = Omit<FirewallForwardRule, "id">;
 
 export async function fetchFirewallRules() {
   const response = await client.get("/firewall/rules");
-  return response.data as { items: FirewallRule[] };
+  return response.data as { items: FirewallRule[]; initialized: boolean };
 }
 
 export async function createFirewallRule(payload: FirewallRulePayload) {

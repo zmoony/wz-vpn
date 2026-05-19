@@ -2,14 +2,15 @@ import { createRouter, createWebHistory } from "vue-router";
 
 import AppLayout from "../layouts/AppLayout.vue";
 import { useAuthStore } from "../stores/auth";
-import CertsView from "../views/CertsView.vue";
-import DashboardView from "../views/DashboardView.vue";
-import DDNSView from "../views/DDNSView.vue";
-import FirewallView from "../views/FirewallView.vue";
-import LoginView from "../views/LoginView.vue";
-import ProxyView from "../views/ProxyView.vue";
-import SettingsView from "../views/SettingsView.vue";
-import WireGuardView from "../views/WireGuardView.vue";
+
+const LoginView = () => import("../views/LoginView.vue");
+const DashboardView = () => import("../views/DashboardView.vue");
+const WireGuardView = () => import("../views/WireGuardView.vue");
+const ProxyView = () => import("../views/ProxyView.vue");
+const DDNSView = () => import("../views/DDNSView.vue");
+const CertsView = () => import("../views/CertsView.vue");
+const FirewallView = () => import("../views/FirewallView.vue");
+const SettingsView = () => import("../views/SettingsView.vue");
 
 const router = createRouter({
   history: createWebHistory(),

@@ -32,10 +32,12 @@ async function handleLogout() {
 <template>
   <div class="layout">
     <aside class="layout__sidebar">
-      <div class="brand">
+      <div class="layout__brand surface-muted">
         <small>Raspberry Pi Gateway</small>
         <strong>Pi-Gateway</strong>
+        <p>面向家庭网络的统一控制台，把 VPN、证书、反代和防火墙放进同一片山水界面里。</p>
       </div>
+
       <nav class="nav">
         <RouterLink
           v-for="item in navigation"
@@ -44,19 +46,35 @@ async function handleLogout() {
           class="nav__item"
           :class="{ 'nav__item--active': route.path === item.to }"
         >
-          {{ item.label }}
+          <span class="nav__item-label">{{ item.label }}</span>
+          <small>{{ route.path === item.to ? "当前页面" : "进入" }}</small>
         </RouterLink>
       </nav>
+
+      <div class="layout__sidebar-note surface-muted">
+        <strong>运维提示</strong>
+        <p>推荐先在“设置”页补齐 WireGuard 参数，再逐步启用防火墙、证书和反向代理能力。</p>
+      </div>
     </aside>
 
     <div class="layout__content">
       <header class="layout__header">
-        <div>
-          <small>当前模块</small>
-          <h1>{{ title }}</h1>
+        <div class="layout__header-main">
+          <span class="layout__crumb">当前模块</span>
+          <div class="layout__headline">
+            <h1>{{ title }}</h1>
+            <p>延续自然配色和轻量信息层级，让高风险配置也能更清楚地完成。</p>
+          </div>
         </div>
+
         <div class="layout__header-actions">
-          <span>{{ auth.user?.username }}</span>
+          <div class="layout__user-chip surface-muted">
+            <span class="layout__user-dot" />
+            <div>
+              <strong>{{ auth.user?.username }}</strong>
+              <small>已登录</small>
+            </div>
+          </div>
           <button class="ghost-button" type="button" @click="handleLogout">退出登录</button>
         </div>
       </header>
@@ -72,49 +90,86 @@ async function handleLogout() {
 .layout {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 296px 1fr;
 }
 
 .layout__sidebar {
-  padding: 28px 22px;
-  background: linear-gradient(180deg, #081120 0%, #0e1c31 100%);
-  color: #f8fbff;
-}
-
-.brand {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 28px;
+  gap: 18px;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(18, 66, 63, 0.96), rgba(13, 45, 43, 0.98)),
+    linear-gradient(180deg, #0d2d2b 0%, #173634 100%);
+  color: #f7f7f2;
 }
 
-.brand small {
-  color: rgba(248, 251, 255, 0.7);
+.layout__brand,
+.layout__sidebar-note {
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
-.brand strong {
-  font-size: 28px;
+.layout__brand small,
+.layout__sidebar-note p {
+  color: rgba(247, 247, 242, 0.72);
+}
+
+.layout__brand strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.layout__brand p,
+.layout__sidebar-note p {
+  margin: 10px 0 0;
+  line-height: 1.7;
+}
+
+.layout__sidebar-note strong {
+  color: #f5b841;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .nav__item {
-  padding: 12px 14px;
-  border-radius: 14px;
-  color: rgba(248, 251, 255, 0.76);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  color: rgba(247, 247, 242, 0.78);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nav__item small {
+  color: rgba(247, 247, 242, 0.54);
 }
 
 .nav__item--active,
 .nav__item:hover {
-  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
+  background: linear-gradient(135deg, rgba(22, 152, 142, 0.28), rgba(245, 184, 65, 0.14));
+  border-color: rgba(245, 184, 65, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.nav__item-label {
+  font-weight: 600;
 }
 
 .layout__content {
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -122,45 +177,110 @@ async function handleLogout() {
 .layout__header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 24px 28px 0;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 26px var(--space-page) 0;
 }
 
-.layout__header small {
-  color: var(--muted);
+.layout__header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.layout__header h1 {
-  margin: 6px 0 0;
-  font-size: 28px;
+.layout__crumb {
+  color: var(--earth);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.layout__headline h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.15;
+}
+
+.layout__headline p {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
 }
 
 .layout__header-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+}
+
+.layout__user-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.layout__user-chip strong {
+  display: block;
+}
+
+.layout__user-chip small {
+  color: var(--text-muted);
+}
+
+.layout__user-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--success), var(--brand));
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.08);
 }
 
 .ghost-button {
-  padding: 10px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: #fff;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid rgba(22, 152, 142, 0.18);
+  border-radius: 12px;
+  color: var(--brand-deep);
+  background: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .layout__main {
-  padding: 28px;
+  padding: 24px var(--space-page) 30px;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1120px) {
   .layout {
     grid-template-columns: 1fr;
   }
 
   .layout__sidebar {
-    display: none;
+    gap: 12px;
+    padding: 18px var(--space-page);
+  }
+
+  .nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .nav__item {
+    min-width: 150px;
+  }
+}
+
+@media (max-width: 720px) {
+  .layout__header {
+    flex-direction: column;
+  }
+
+  .layout__header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 </style>
