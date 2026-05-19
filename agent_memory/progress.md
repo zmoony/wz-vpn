@@ -67,3 +67,7 @@
   - 新增 `[web/src/lib/element-plus.ts]`，将 `ElMessage / ElMessageBox` 收口到 `es/components/...` 细粒度入口，避免页面继续从包根导入。
   - 构建结果中 `element-plus` JS chunk 已由约 `794kB` 降到约 `260kB`，CSS chunk 维持在约 `119kB`。
   - 验证已通过：`npm run build`。
+- 2026-05-19：后台布局滚动行为已修正为“右侧内容区独立滚动”。
+  - `AppLayout.vue` 已将桌面端根布局改为固定视口高度，左侧菜单和右侧头部不再跟随内容区一起滚动。
+  - 右侧主体区域改为独立 `overflow-y: auto`，桌面端滚动只发生在内容区；移动端保持现有单列自然滚动，避免交互倒退。
+  - 验证已通过：`npm run build`。

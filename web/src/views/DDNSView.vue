@@ -48,7 +48,7 @@ async function load() {
   loading.value = true;
   try {
     const response = await fetchDDNSConfigs();
-    items.value = response.items;
+    items.value = Array.isArray(response.items) ? response.items : [];
     runtimeStatus.value = response.runtimeStatus;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "加载 DDNS 配置失败");

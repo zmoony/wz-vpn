@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/zmoony/pi-gateway/internal/domain"
 	"github.com/zmoony/pi-gateway/internal/service"
 )
 
@@ -132,6 +133,9 @@ func (h FirewallHandler) ListForwardRules(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
+	}
+	if items == nil {
+		items = []domain.FirewallForwardRule{}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }

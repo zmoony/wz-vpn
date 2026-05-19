@@ -88,9 +88,10 @@ async function handleLogout() {
 
 <style scoped>
 .layout {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 296px 1fr;
+  overflow: hidden;
 }
 
 .layout__sidebar {
@@ -98,6 +99,8 @@ async function handleLogout() {
   flex-direction: column;
   gap: 18px;
   padding: 24px;
+  height: 100vh;
+  overflow-y: auto;
   background:
     linear-gradient(180deg, rgba(18, 66, 63, 0.96), rgba(13, 45, 43, 0.98)),
     linear-gradient(180deg, #0d2d2b 0%, #173634 100%);
@@ -172,14 +175,23 @@ async function handleLogout() {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .layout__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 18px;
   padding: 26px var(--space-page) 0;
+  background:
+    linear-gradient(180deg, rgba(251, 250, 247, 0.95) 0%, rgba(245, 245, 245, 0.88) 72%, rgba(245, 245, 245, 0) 100%);
+  backdrop-filter: blur(12px);
 }
 
 .layout__header-main {
@@ -249,17 +261,24 @@ async function handleLogout() {
 }
 
 .layout__main {
+  flex: 1;
+  min-height: 0;
   padding: 24px var(--space-page) 30px;
+  overflow-y: auto;
 }
 
 @media (max-width: 1120px) {
   .layout {
+    height: auto;
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .layout__sidebar {
     gap: 12px;
     padding: 18px var(--space-page);
+    height: auto;
+    overflow: visible;
   }
 
   .nav {
@@ -270,6 +289,21 @@ async function handleLogout() {
 
   .nav__item {
     min-width: 150px;
+  }
+
+  .layout__content {
+    height: auto;
+    overflow: visible;
+  }
+
+  .layout__header {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .layout__main {
+    overflow: visible;
   }
 }
 

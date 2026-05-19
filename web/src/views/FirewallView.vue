@@ -124,10 +124,10 @@ async function load() {
       fetchFirewallForwardRules(),
       fetchFirewallForwardConfig(),
     ]);
-    items.value = rules.items;
+    items.value = Array.isArray(rules.items) ? rules.items : [];
     defaultsInitialized.value = rules.initialized;
     pendingState.value = pending.pendingState;
-    forwardItems.value = forwardRules.items;
+    forwardItems.value = Array.isArray(forwardRules.items) ? forwardRules.items : [];
     legacyForwardConfig.enabled = legacyForward.enabled;
     legacyForwardConfig.wgInterface = legacyForward.wgInterface;
     legacyForwardConfig.lanCidr = legacyForward.lanCidr;
