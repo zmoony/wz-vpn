@@ -35,10 +35,19 @@ func (m SystemManager) IssueAndInstall(ctx context.Context, item domain.Certific
 	}
 
 	env := m.acmeEnv(item)
-	if _, err := m.Runner.Run(ctx, "cmd", "/c", env+" \""+m.ACMEShPath+"\" --issue --dns dns_ali -d *."+item.RootDomain+" -d "+item.RootDomain); err != nil {
+	if _, err := m.Runner.RunEnv(ctx, env, m.ACMEShPath, "--issue", "--dns", dnsProvider(item.Provider), "-d", "*."+item.RootDomain, "-d", item.RootDomain); err != nil {
 		return "", "", err
 	}
-	if _, err := m.Runner.Run(ctx, "cmd", "/c", env+" \""+m.ACMEShPath+"\" --install-cert -d "+item.RootDomain+" --key-file \""+keyPath+"\" --fullchain-file \""+fullchainPath+"\" --reloadcmd \""+m.ReloadCmd+"\""); err != nil {
+	installArgs := []string{
+		"--install-cert",
+		"-d", item.RootDomain,
+		"--key-file", keyPath,
+		"--fullchain-file", fullchainPath,
+	}
+	if strings.TrimSpace(m.ReloadCmd) != "" {
+		installArgs = append(installArgs, "--reloadcmd", m.ReloadCmd)
+	}
+	if _, err := m.Runner.RunEnv(ctx, env, m.ACMEShPath, installArgs...); err != nil {
 		return "", "", err
 	}
 
@@ -47,7 +56,7 @@ func (m SystemManager) IssueAndInstall(ctx context.Context, item domain.Certific
 
 func (m SystemManager) Renew(ctx context.Context, item domain.CertificateConfig) error {
 	env := m.acmeEnv(item)
-	_, err := m.Runner.Run(ctx, "cmd", "/c", env+" \""+m.ACMEShPath+"\" --renew -d "+item.RootDomain+" --force")
+	_, err := m.Runner.RunEnv(ctx, env, m.ACMEShPath, "--renew", "-d", item.RootDomain, "--force")
 	return err
 }
 
@@ -77,13 +86,25 @@ func (m SystemManager) ReadInstalledStatus(_ context.Context, item domain.Certif
 	return item, nil
 }
 
-func (m SystemManager) acmeEnv(item domain.CertificateConfig) string {
+func (m SystemManager) acmeEnv(item domain.CertificateConfig) map[string]string {
 	provider := strings.ToLower(strings.TrimSpace(item.Provider))
 	if provider == "" {
 		provider = "aliyun"
 	}
 	if provider == "aliyun" {
-		return "set Ali_Key=" + item.AccessKeyID + "&& set Ali_Secret=" + item.AccessKeySecretEnc + "&&"
+		return map[string]string{
+			"Ali_Key":    item.AccessKeyID,
+			"Ali_Secret": item.AccessKeySecretEnc,
+		}
 	}
-	return ""
+	return nil
+}
+
+func dnsProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "aliyun":
+		return "dns_ali"
+	default:
+		return "dns_ali"
+	}
 }

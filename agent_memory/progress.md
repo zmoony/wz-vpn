@@ -71,3 +71,11 @@
   - `AppLayout.vue` 已将桌面端根布局改为固定视口高度，左侧菜单和右侧头部不再跟随内容区一起滚动。
   - 右侧主体区域改为独立 `overflow-y: auto`，桌面端滚动只发生在内容区；移动端保持现有单列自然滚动，避免交互倒退。
   - 验证已通过：`npm run build`。
+- 2026-05-19：已补充现场部署手册。
+  - 新增文档 `[docs/07-现场部署手册.md]`，覆盖系统准备、构建产物、安装脚本使用、环境变量修改、外围依赖接入、首次访问、验收和排障。
+  - `README.md` 文档导航已补上该手册入口。
+- 2026-05-19：证书模块已修成 Linux 原生命令调用模式。
+  - `internal/platform/acme/manager.go` 不再使用 `cmd /c` 和 `set ... &&`，改为直接执行 `acme.sh`，并通过环境变量注入 `Ali_Key / Ali_Secret`。
+  - `internal/platform/command_runner.go` 已补充带环境变量的执行接口，供 `acme` 平台层复用。
+  - 新增 `internal/platform/acme/manager_test.go`，覆盖 `issue/install/renew` 不再走 `cmd /c` 的行为。
+  - 验证已通过：`go test ./internal/platform/acme`、`go test ./internal/service/...`。
